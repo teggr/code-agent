@@ -21,4 +21,4 @@ COPILOT_HOST="${COPILOT_HOST:-0.0.0.0}"
 
 echo "Starting Copilot CLI (headless) on ${COPILOT_HOST}:${COPILOT_PORT}"
 
-exec copilot --headless --host "${COPILOT_HOST}" --port "${COPILOT_PORT}"
+exec copilot --headless --port "${COPILOT_PORT}"

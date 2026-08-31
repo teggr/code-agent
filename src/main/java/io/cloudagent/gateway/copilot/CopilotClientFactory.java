@@ -16,9 +16,11 @@ import org.springframework.stereotype.Component;
 /**
  * Creates {@link CopilotClient} instances that attach to an already-running, headless Copilot CLI
  * process using the SDK's {@code RuntimeConnection.forUri(...)} mechanism. The gateway never
- * spawns a CLI process itself: {@code mode(EMPTY)} plus a {@code cliUrl} pointing at the agent
- * container's hostname/port is what makes this an "external server" connection rather than the
- * SDK's default auto-managed child-process mode.
+ * spawns a CLI process itself: {@code mode(EMPTY)} plus a {@code cliUrl} is what makes this an
+ * "external server" connection rather than the SDK's default auto-managed child-process mode.
+ *
+ * <p>Callers pass {@code 127.0.0.1} and the container's published host port: the gateway is a
+ * host JVM, not a container, so Docker DNS names are not resolvable to it.
  */
 @Component
 public class CopilotClientFactory {
@@ -32,8 +34,9 @@ public class CopilotClientFactory {
     }
 
     /**
-     * Connects to the headless Copilot CLI listening at {@code host:port}, retrying until it
-     * becomes reachable or {@link CopilotConnectionProperties#connectTimeoutSeconds()} elapses.
+     * Connects to the headless Copilot CLI reachable at {@code host:port} — in practice
+     * {@code 127.0.0.1:<published-host-port>} — retrying until it becomes reachable or
+     * {@link CopilotConnectionProperties#connectTimeoutSeconds()} elapses.
      */
     public CopilotClient connect(String host, int port) {
         String cliUrl = host + ":" + port;

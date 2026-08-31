@@ -36,10 +36,19 @@ prompts, and stream back agent events — without the gateway ever spawning the 
                   +-------------------+
 ```
 
-The gateway and every agent container share a private Docker network (`cloud-agent-net` by
-default). The Copilot CLI's port is **never** published to the host or the internet — the gateway
-reaches it purely via Docker container-name DNS resolution. The only externally reachable service
-is the gateway itself.
+The gateway runs as a plain JVM process on the VPS host, so it cannot resolve Docker DNS names.
+Each agent container therefore publishes its Copilot port on a unique host port bound **only** to
+`127.0.0.1`:
+
+```
+Gateway JVM -> 127.0.0.1:<unique-host-port> -> agent container:<copilot-port>
+```
+
+The port range is configurable (`cloud-agent.docker.host-port-range-start` / `-end`, default
+45000-45999). Because the binding is loopback-only, the Copilot port is never reachable from
+0.0.0.0, the VPS LAN, Tailscale or the internet. The shared Docker network (`cloud-agent-net` by
+default) is kept for future container-to-container communication. The only externally reachable
+service is the gateway itself.
 
 ## What this prototype proves
 
@@ -110,17 +119,17 @@ Build it with:
 Inside the container, `docker/start-agent.sh` runs:
 
 ```bash
-copilot --headless --host 0.0.0.0 --port "${COPILOT_PORT:-4321}"
+copilot --headless --port "${COPILOT_PORT:-4321}"
 ```
 
 `COPILOT_PORT` is configurable per agent type in `application.yml`
 (`cloud-agent.agents.<type>.copilot-port`) and passed into the container as an environment
-variable by `ContainerManager`. `--host 0.0.0.0` is required so the gateway (a different
-container) can reach it over `cloud-agent-net`; this is safe here because the port is never
-published to the host.
+variable by `ContainerManager`. That container port is published by `docker create --publish
+127.0.0.1:<host-port>:<copilot-port>`, so it is reachable from the gateway process on the host
+but from nowhere else.
 
 The gateway connects using the SDK's external-server / backend-services pattern
-(`RuntimeConnection.forUri("<container-name>:<port>")`, `mode(EMPTY)`), which is the mechanism the
+(`RuntimeConnection.forUri("127.0.0.1:<host-port>")`, `mode(EMPTY)`), which is the mechanism the
 SDK provides specifically for attaching to a CLI process someone else started and manages — see
 `CopilotClientFactory`. It never sets `cliPath`/`cliArgs`/`autoStart(true)`, so the SDK cannot spawn
 its own CLI process.

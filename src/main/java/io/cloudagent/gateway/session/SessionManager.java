@@ -13,6 +13,8 @@ import io.cloudagent.gateway.copilot.CopilotClientFactory;
 import io.cloudagent.gateway.copilot.CopilotConnectionProperties;
 import io.cloudagent.gateway.docker.ContainerInfo;
 import io.cloudagent.gateway.docker.ContainerManager;
+import io.cloudagent.gateway.docker.CreatedContainer;
+import io.cloudagent.gateway.docker.HostPortAllocator;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -42,12 +44,13 @@ public class SessionManager {
     private final AgentEventHub eventHub;
     private final ObjectMapper objectMapper;
     private final CopilotConnectionProperties copilotProperties;
+    private final HostPortAllocator portAllocator;
     private final Map<String, GatewaySession> activeSessions = new ConcurrentHashMap<>();
 
     public SessionManager(AgentRegistry agentRegistry, ContainerManager containerManager,
                           CopilotClientFactory copilotClientFactory, SessionRepository sessionRepository,
                           AgentEventHub eventHub, ObjectMapper objectMapper,
-                          CopilotConnectionProperties copilotProperties) {
+                          CopilotConnectionProperties copilotProperties, HostPortAllocator portAllocator) {
         this.agentRegistry = agentRegistry;
         this.containerManager = containerManager;
         this.copilotClientFactory = copilotClientFactory;
@@ -55,6 +58,7 @@ public class SessionManager {
         this.sessionRepository = sessionRepository;
         this.eventHub = eventHub;
         this.objectMapper = objectMapper;
+        this.portAllocator = portAllocator;
     }
 
     /** Creates a brand-new session: a fresh container plus a fresh Copilot conversation. */
@@ -63,10 +67,14 @@ public class SessionManager {
         boolean persistent = persistentOverride != null ? persistentOverride : agent.persistent();
         String sessionId = UUID.randomUUID().toString();
 
-        String containerName = containerManager.createContainer(sessionId, agent, persistent);
+        CreatedContainer container = containerManager.createContainer(sessionId, agent, persistent);
+        String containerName = container.containerName();
+        int hostPort = container.hostPort();
         containerManager.startContainer(containerName);
 
-        CopilotClient client = copilotClientFactory.connect(containerManager.hostname(containerName), agent.copilotPort());
+        // The gateway runs outside Docker, so it always dials the published loopback port rather
+        // than the container's Docker DNS name (which is unresolvable from the host).
+        CopilotClient client = copilotClientFactory.connect(HostPortAllocator.LOOPBACK, hostPort);
         try {
             SessionConfig config = new SessionConfig()
                     .setSessionId(sessionId)
@@ -75,7 +83,7 @@ public class SessionManager {
                     .setStreaming(true)
                     .setOnPermissionRequest(PermissionHandler.APPROVE_ALL);
             CopilotSession copilotSession = client.createSession(config).get();
-            return register(sessionId, agentType, containerName, persistent, client, copilotSession);
+            return register(sessionId, agentType, containerName, hostPort, persistent, client, copilotSession);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             client.close();
@@ -106,11 +114,17 @@ public class SessionManager {
             containerManager.startContainer(record.containerName());
         }
 
-        CopilotClient client = copilotClientFactory.connect(containerManager.hostname(record.containerName()), agent.copilotPort());
+        // Reuse the mapping the container was created with: a persistent container keeps its
+        // published host port for its whole life, so no new port may be allocated here.
+        int hostPort = resolveHostPort(record, container.get(), agent);
+        portAllocator.reserve(hostPort);
+
+        CopilotClient client = copilotClientFactory.connect(HostPortAllocator.LOOPBACK, hostPort);
         try {
             CopilotSession copilotSession = client.resumeSession(sessionId, new com.github.copilot.rpc.ResumeSessionConfig()
                     .setModel(copilotProperties.model())).get();
-            return register(sessionId, record.agentType(), record.containerName(), record.persistent(), client, copilotSession);
+            return register(sessionId, record.agentType(), record.containerName(), hostPort, record.persistent(),
+                    client, copilotSession);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             client.close();
@@ -121,14 +135,33 @@ public class SessionManager {
         }
     }
 
-    private SessionRecord register(String sessionId, String agentType, String containerName, boolean persistent,
-                                    CopilotClient client, CopilotSession copilotSession) {
-        GatewaySession gatewaySession = new GatewaySession(sessionId, agentType, containerName, persistent, client, copilotSession);
+    /**
+     * Determines the host port of an already-existing container: the persisted value if we have
+     * one, otherwise whatever Docker reports for the live container (covers records written
+     * before host ports were persisted).
+     */
+    private int resolveHostPort(SessionRecord record, ContainerInfo container, AgentDefinition agent) {
+        if (record.hostPort() > 0) {
+            return record.hostPort();
+        }
+        if (container.hostPort() != null && container.hostPort() > 0) {
+            return container.hostPort();
+        }
+        return containerManager.findHostPort(record.containerName(), agent.copilotPort())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Container " + record.containerName() + " has no published Copilot port on "
+                                + HostPortAllocator.LOOPBACK));
+    }
+
+    private SessionRecord register(String sessionId, String agentType, String containerName, int hostPort,
+                                    boolean persistent, CopilotClient client, CopilotSession copilotSession) {
+        GatewaySession gatewaySession = new GatewaySession(sessionId, agentType, containerName, hostPort, persistent,
+                client, copilotSession);
         gatewaySession.setEventSubscription(copilotSession.on(event -> broadcast(sessionId, event)));
         activeSessions.put(sessionId, gatewaySession);
 
         Instant now = Instant.now();
-        SessionRecord record = new SessionRecord(sessionId, agentType, containerName, persistent,
+        SessionRecord record = new SessionRecord(sessionId, agentType, containerName, hostPort, persistent,
                 SessionStatus.RUNNING, now, now);
         sessionRepository.save(record);
         return record;
@@ -181,11 +214,16 @@ public class SessionManager {
         containerManager.stopContainer(record.containerName());
 
         if (record.persistent()) {
+            // The container (and therefore its host port mapping) survives, so the port stays
+            // reserved for when this session is reconnected.
             sessionRepository.save(new SessionRecord(record.sessionId(), record.agentType(), record.containerName(),
-                    true, SessionStatus.STOPPED, record.createdAt(), Instant.now()));
+                    record.hostPort(), true, SessionStatus.STOPPED, record.createdAt(), Instant.now()));
         } else {
             containerManager.removeContainer(record.containerName());
             sessionRepository.delete(sessionId);
+            if (record.hostPort() > 0) {
+                portAllocator.release(record.hostPort());
+            }
         }
     }
 }

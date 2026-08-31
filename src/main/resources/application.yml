@@ -19,6 +19,9 @@ cloud-agent:
     workspace-root: ${CLOUD_AGENT_WORKSPACE_ROOT:./data/workspaces}
     container-prefix: cloud-agent
     command-timeout-seconds: 30
+    # Host ports (bound to 127.0.0.1 only) used to publish each container's Copilot port.
+    host-port-range-start: 45000
+    host-port-range-end: 45999
   copilot:
     connect-timeout-seconds: 30
     poll-interval-millis: 500

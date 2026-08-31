@@ -64,9 +64,9 @@ RUN chmod +x /usr/local/bin/start-agent.sh && chown agent:agent /agent/AGENTS.md
 USER agent
 WORKDIR /workspace
 
-# Informational only: the actual port is read from $COPILOT_PORT at runtime by start-agent.sh and
-# is never published to the host — the gateway reaches it via Docker network/container-name
-# addressing on cloud-agent-net instead.
+# Informational only: the actual port is read from $COPILOT_PORT at runtime by start-agent.sh.
+# ContainerManager publishes it on a unique 127.0.0.1:<host-port> mapping so the gateway JVM on
+# the host can reach it; it is never exposed on 0.0.0.0 or any public interface.
 EXPOSE 4321
 
 ENTRYPOINT ["/usr/local/bin/start-agent.sh"]

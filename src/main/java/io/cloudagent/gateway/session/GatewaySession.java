@@ -14,16 +14,18 @@ public final class GatewaySession {
     private final String sessionId;
     private final String agentType;
     private final String containerName;
+    private final int hostPort;
     private final boolean persistent;
     private final CopilotClient client;
     private final CopilotSession copilotSession;
     private volatile Closeable eventSubscription;
 
-    public GatewaySession(String sessionId, String agentType, String containerName, boolean persistent,
+    public GatewaySession(String sessionId, String agentType, String containerName, int hostPort, boolean persistent,
                           CopilotClient client, CopilotSession copilotSession) {
         this.sessionId = sessionId;
         this.agentType = agentType;
         this.containerName = containerName;
+        this.hostPort = hostPort;
         this.persistent = persistent;
         this.client = client;
         this.copilotSession = copilotSession;
@@ -39,6 +41,11 @@ public final class GatewaySession {
 
     public String containerName() {
         return containerName;
+    }
+
+    /** The 127.0.0.1 host port this session's Copilot connection uses. */
+    public int hostPort() {
+        return hostPort;
     }
 
     public boolean persistent() {

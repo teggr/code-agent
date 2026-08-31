@@ -15,22 +15,36 @@ public class SessionRepository {
 
     public SessionRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+        addHostPortColumnIfMissing();
+    }
+
+    /**
+     * SQLite has no {@code ADD COLUMN IF NOT EXISTS}, and {@code schema.sql} only creates the
+     * table when absent, so databases written before Copilot ports were published on the host
+     * are upgraded here.
+     */
+    private void addHostPortColumnIfMissing() {
+        List<String> columns = jdbcTemplate.query("PRAGMA table_info(sessions)",
+                (rs, rowNum) -> rs.getString("name"));
+        if (!columns.isEmpty() && !columns.contains("host_port")) {
+            jdbcTemplate.execute("ALTER TABLE sessions ADD COLUMN host_port INTEGER NOT NULL DEFAULT 0");
+        }
     }
 
     public void save(SessionRecord record) {
         int updated = jdbcTemplate.update("""
                 UPDATE sessions
-                SET agent_type = ?, container_name = ?, persistent = ?, status = ?, updated_at = ?
+                SET agent_type = ?, container_name = ?, host_port = ?, persistent = ?, status = ?, updated_at = ?
                 WHERE session_id = ?
                 """,
-                record.agentType(), record.containerName(), record.persistent(),
+                record.agentType(), record.containerName(), record.hostPort(), record.persistent(),
                 record.status().name(), Timestamp.from(record.updatedAt()), record.sessionId());
         if (updated == 0) {
             jdbcTemplate.update("""
-                    INSERT INTO sessions (session_id, agent_type, container_name, persistent, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO sessions (session_id, agent_type, container_name, host_port, persistent, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    record.sessionId(), record.agentType(), record.containerName(), record.persistent(),
+                    record.sessionId(), record.agentType(), record.containerName(), record.hostPort(), record.persistent(),
                     record.status().name(), Timestamp.from(record.createdAt()), Timestamp.from(record.updatedAt()));
         }
     }
@@ -54,6 +68,7 @@ public class SessionRepository {
                 rs.getString("session_id"),
                 rs.getString("agent_type"),
                 rs.getString("container_name"),
+                rs.getInt("host_port"),
                 rs.getBoolean("persistent"),
                 SessionStatus.valueOf(rs.getString("status")),
                 toInstant(rs.getTimestamp("created_at")),

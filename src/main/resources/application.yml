@@ -1,0 +1,30 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: cloud-agent-gateway
+  datasource:
+    url: jdbc:sqlite:${CLOUD_AGENT_DB_PATH:./data/cloud-agent-gateway.db}
+    driver-class-name: org.sqlite.JDBC
+  sql:
+    init:
+      mode: always
+
+# Cloud Agent Gateway prototype configuration. Values here can be overridden with the matching
+# CLOUD_AGENT_* environment variables (Spring relaxed binding), e.g. CLOUD_AGENT_DOCKER_NETWORK.
+cloud-agent:
+  docker:
+    network: cloud-agent-net
+    workspace-root: ${CLOUD_AGENT_WORKSPACE_ROOT:./data/workspaces}
+    container-prefix: cloud-agent
+    command-timeout-seconds: 30
+  copilot:
+    connect-timeout-seconds: 30
+    poll-interval-millis: 500
+    model: gpt-5.4
+  agents:
+    default:
+      image: cloud-agent:latest
+      copilot-port: 4321
+      persistent: false

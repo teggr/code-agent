@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cloud Agent Gateway — Manual Test Page</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 800px; }
+    label { display: block; margin-top: 1rem; font-weight: bold; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: .5rem; }
+    button { margin-top: .5rem; padding: .5rem 1rem; }
+    #events, #log { background: #111; color: #0f0; padding: 1rem; height: 220px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Cloud Agent Gateway — Manual Test Page</h1>
+  <p>Not a polished UI — a minimal harness for exercising the REST/WebSocket API by hand.</p>
+
+  <label for="baseUrl">Gateway base URL</label>
+  <input id="baseUrl" value="http://localhost:8080">
+
+  <label for="agentType">Agent type</label>
+  <input id="agentType" value="default">
+
+  <button id="createBtn">Create session</button>
+
+  <label for="sessionId">Session ID</label>
+  <input id="sessionId" placeholder="filled in after creating a session">
+
+  <button id="connectBtn">Connect WebSocket (stream events)</button>
+  <button id="reconnectBtn">Reconnect (persistent session)</button>
+  <button id="stopBtn">Stop session</button>
+
+  <label for="prompt">Prompt</label>
+  <textarea id="prompt" rows="3">Say hello in one short sentence.</textarea>
+  <button id="sendBtn">Send prompt</button>
+
+  <label>Streamed agent events</label>
+  <div id="events"></div>
+
+  <label>Log</label>
+  <div id="log"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const log = (msg) => { $('log').textContent += msg + '\n'; $('log').scrollTop = $('log').scrollHeight; };
+    const events = (msg) => { $('events').textContent += msg + '\n'; $('events').scrollTop = $('events').scrollHeight; };
+
+    let ws;
+
+    $('createBtn').onclick = async () => {
+      const res = await fetch(`${$('baseUrl').value}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentType: $('agentType').value })
+      });
+      const data = await res.json();
+      log('create: ' + JSON.stringify(data));
+      if (data.sessionId) $('sessionId').value = data.sessionId;
+    };
+
+    $('connectBtn').onclick = () => {
+      const wsUrl = $('baseUrl').value.replace(/^http/, 'ws') + '/ws/sessions/' + $('sessionId').value;
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => log('websocket connected: ' + wsUrl);
+      ws.onmessage = (e) => events(e.data);
+      ws.onclose = () => log('websocket closed');
+      ws.onerror = (e) => log('websocket error');
+    };
+
+    $('reconnectBtn').onclick = async () => {
+      const res = await fetch(`${$('baseUrl').value}/api/sessions/${$('sessionId').value}/reconnect`, { method: 'POST' });
+      log('reconnect: ' + JSON.stringify(await res.json()));
+    };
+
+    $('sendBtn').onclick = async () => {
+      const res = await fetch(`${$('baseUrl').value}/api/sessions/${$('sessionId').value}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: $('prompt').value })
+      });
+      log('prompt response: ' + JSON.stringify(await res.json()));
+    };
+
+    $('stopBtn').onclick = async () => {
+      const res = await fetch(`${$('baseUrl').value}/api/sessions/${$('sessionId').value}`, { method: 'DELETE' });
+      log('stop: HTTP ' + res.status);
+    };
+  </script>
+</body>
+</html>

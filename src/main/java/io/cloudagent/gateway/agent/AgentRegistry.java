@@ -1,5 +1,6 @@
 package io.cloudagent.gateway.agent;
 
+import io.cloudagent.gateway.session.NotFoundException;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
@@ -23,7 +24,7 @@ public class AgentRegistry {
 
     public AgentDefinition require(String agentType) {
         return find(agentType)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown agent type: " + agentType));
+                .orElseThrow(() -> new NotFoundException("Unknown agent type: " + agentType));
     }
 
     public Map<String, AgentDefinition> all() {

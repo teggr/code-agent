@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,12 @@ import org.springframework.stereotype.Component;
 public class ContainerManager {
 
     private static final Logger log = LoggerFactory.getLogger(ContainerManager.class);
+
+    // Session IDs are always gateway-generated UUIDs (see SessionManager#createSession), but
+    // client-supplied path variables also flow into findBySession/stopContainer/etc.; validating
+    // the shape here defends every docker CLI invocation against unexpected argument content.
+    private static final Pattern SESSION_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$");
+    private static final Pattern CONTAINER_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,150}$");
 
     private final DockerProperties properties;
 
@@ -51,6 +58,7 @@ public class ContainerManager {
      *         gateway's Docker network (see {@link #hostname(String)})
      */
     public String createContainer(String sessionId, AgentDefinition agent, boolean persistent) {
+        validateSessionId(sessionId);
         String containerName = containerName(sessionId);
         Path workspace = ensureWorkspaceDir(sessionId);
 
@@ -61,48 +69,91 @@ public class ContainerManager {
                 "--label", ContainerLabels.MANAGED_BY + "=true",
                 "--label", ContainerLabels.SESSION + "=" + sessionId,
                 "--label", ContainerLabels.LIFECYCLE + "=" + (persistent ? "persistent" : "ephemeral"),
-                "-v", workspace.toAbsolutePath() + ":/workspace",
-                "-e", "COPILOT_PORT=" + agent.copilotPort()));
+                "-v", workspace.toAbsolutePath() + ":/workspace"));
 
-        agent.environment().forEach((key, value) -> {
-            command.add("-e");
-            command.add(key + "=" + value);
-        });
-
-        // Pass through auth env vars from the gateway's own environment if present, so operators
-        // can `docker run`/systemd-set them once on the host without touching agent config.
-        for (String passthrough : List.of("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")) {
-            String value = System.getenv(passthrough);
-            if (value != null && !value.isBlank()) {
-                command.add("-e");
-                command.add(passthrough + "=" + value);
-            }
-        }
-
+        Path envFile = writeEnvFile(sessionId, agent);
+        command.add("--env-file");
+        command.add(envFile.toAbsolutePath().toString());
         command.add(agent.image());
 
-        run(command.toArray(String[]::new));
+        try {
+            run(command.toArray(String[]::new));
+        } finally {
+            // Secrets (e.g. COPILOT_GITHUB_TOKEN) must never linger in argv, where any host user
+            // able to read /proc could see them; --env-file keeps them out of the process list,
+            // and the file itself is deleted immediately after `docker create` has read it.
+            deleteQuietly(envFile);
+        }
         return containerName;
     }
 
+    /**
+     * Writes container environment variables (including secrets) to a private, 0600 temp file
+     * consumed via {@code docker create --env-file}, so secrets never appear in process argument
+     * lists (e.g. {@code ps aux}) as plain {@code -e KEY=VALUE} pairs would.
+     */
+    private Path writeEnvFile(String sessionId, AgentDefinition agent) {
+        try {
+            Path envFile = Files.createTempFile("cloud-agent-" + sessionId + "-", ".env");
+            try {
+                Files.setPosixFilePermissions(envFile, java.util.EnumSet.of(
+                        java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                        java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+            } catch (UnsupportedOperationException ignored) {
+                // Non-POSIX filesystem (e.g. Windows); best-effort only.
+            }
+
+            StringBuilder content = new StringBuilder();
+            content.append("COPILOT_PORT=").append(agent.copilotPort()).append('\n');
+            agent.environment().forEach((key, value) -> content.append(key).append('=').append(value).append('\n'));
+
+            // Pass through auth env vars from the gateway's own environment if present, so operators
+            // can set them once on the host without touching agent config.
+            for (String passthrough : List.of("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")) {
+                String value = System.getenv(passthrough);
+                if (value != null && !value.isBlank()) {
+                    content.append(passthrough).append('=').append(value).append('\n');
+                }
+            }
+
+            Files.writeString(envFile, content.toString());
+            return envFile;
+        } catch (IOException e) {
+            throw new DockerException("Unable to write container env file for session " + sessionId, e);
+        }
+    }
+
+    private void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            log.warn("Failed to delete temporary env file {}", path, e);
+        }
+    }
+
     public void startContainer(String containerName) {
+        validateContainerName(containerName);
         run("docker", "start", containerName);
     }
 
     public void stopContainer(String containerName) {
+        validateContainerName(containerName);
         run("docker", "stop", containerName);
     }
 
     public void removeContainer(String containerName) {
+        validateContainerName(containerName);
         run("docker", "rm", "-f", containerName);
     }
 
     /** Returns the DNS name other containers on {@code cloud-agent-net} can use to reach this one. */
     public String hostname(String containerName) {
+        validateContainerName(containerName);
         return containerName;
     }
 
     public Optional<ContainerInfo> inspectContainer(String containerName) {
+        validateContainerName(containerName);
         List<String> lines;
         try {
             lines = run("docker", "inspect",
@@ -121,6 +172,7 @@ public class ContainerManager {
 
     /** Finds an existing (possibly stopped) container belonging to the given session, if any. */
     public Optional<ContainerInfo> findBySession(String sessionId) {
+        validateSessionId(sessionId);
         List<String> ids = run("docker", "ps", "-a",
                 "--filter", "label=" + ContainerLabels.SESSION + "=" + sessionId,
                 "--format", "{{.ID}}");
@@ -128,6 +180,18 @@ public class ContainerManager {
             return Optional.empty();
         }
         return inspectContainer(ids.get(0));
+    }
+
+    private void validateSessionId(String sessionId) {
+        if (sessionId == null || !SESSION_ID_PATTERN.matcher(sessionId).matches()) {
+            throw new IllegalArgumentException("Invalid session id: " + sessionId);
+        }
+    }
+
+    private void validateContainerName(String containerName) {
+        if (containerName == null || !CONTAINER_NAME_PATTERN.matcher(containerName).matches()) {
+            throw new IllegalArgumentException("Invalid container name: " + containerName);
+        }
     }
 
     private Path ensureWorkspaceDir(String sessionId) {

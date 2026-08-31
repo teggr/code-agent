@@ -10,6 +10,7 @@ import com.github.copilot.rpc.SessionConfig;
 import io.cloudagent.gateway.agent.AgentDefinition;
 import io.cloudagent.gateway.agent.AgentRegistry;
 import io.cloudagent.gateway.copilot.CopilotClientFactory;
+import io.cloudagent.gateway.copilot.CopilotConnectionProperties;
 import io.cloudagent.gateway.docker.ContainerInfo;
 import io.cloudagent.gateway.docker.ContainerManager;
 import java.time.Instant;
@@ -40,14 +41,17 @@ public class SessionManager {
     private final SessionRepository sessionRepository;
     private final AgentEventHub eventHub;
     private final ObjectMapper objectMapper;
+    private final CopilotConnectionProperties copilotProperties;
     private final Map<String, GatewaySession> activeSessions = new ConcurrentHashMap<>();
 
     public SessionManager(AgentRegistry agentRegistry, ContainerManager containerManager,
                           CopilotClientFactory copilotClientFactory, SessionRepository sessionRepository,
-                          AgentEventHub eventHub, ObjectMapper objectMapper) {
+                          AgentEventHub eventHub, ObjectMapper objectMapper,
+                          CopilotConnectionProperties copilotProperties) {
         this.agentRegistry = agentRegistry;
         this.containerManager = containerManager;
         this.copilotClientFactory = copilotClientFactory;
+        this.copilotProperties = copilotProperties;
         this.sessionRepository = sessionRepository;
         this.eventHub = eventHub;
         this.objectMapper = objectMapper;
@@ -66,7 +70,7 @@ public class SessionManager {
         try {
             SessionConfig config = new SessionConfig()
                     .setSessionId(sessionId)
-                    .setModel("gpt-5.4")
+                    .setModel(copilotProperties.model())
                     .setWorkingDirectory("/workspace")
                     .setStreaming(true)
                     .setOnPermissionRequest(PermissionHandler.APPROVE_ALL);
@@ -88,7 +92,7 @@ public class SessionManager {
      */
     public SessionRecord reconnect(String sessionId) {
         SessionRecord record = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown session: " + sessionId));
+                .orElseThrow(() -> new NotFoundException("Unknown session: " + sessionId));
         if (activeSessions.containsKey(sessionId)) {
             return record;
         }
@@ -105,7 +109,7 @@ public class SessionManager {
         CopilotClient client = copilotClientFactory.connect(containerManager.hostname(record.containerName()), agent.copilotPort());
         try {
             CopilotSession copilotSession = client.resumeSession(sessionId, new com.github.copilot.rpc.ResumeSessionConfig()
-                    .setModel("gpt-5.4")).get();
+                    .setModel(copilotProperties.model())).get();
             return register(sessionId, record.agentType(), record.containerName(), record.persistent(), client, copilotSession);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -168,7 +172,7 @@ public class SessionManager {
     /** Stops a session: disconnects the SDK, stops the container, and for ephemeral sessions removes it. */
     public void stopSession(String sessionId) {
         SessionRecord record = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown session: " + sessionId));
+                .orElseThrow(() -> new NotFoundException("Unknown session: " + sessionId));
 
         GatewaySession active = activeSessions.remove(sessionId);
         if (active != null) {

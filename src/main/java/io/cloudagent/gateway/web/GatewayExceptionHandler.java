@@ -2,6 +2,7 @@ package io.cloudagent.gateway.web;
 
 import io.cloudagent.gateway.copilot.CopilotConnectionException;
 import io.cloudagent.gateway.docker.DockerException;
+import io.cloudagent.gateway.session.NotFoundException;
 import io.cloudagent.gateway.session.SessionException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -13,9 +14,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GatewayExceptionHandler {
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, String>> handleNotFound(IllegalArgumentException e) {
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleNotFound(NotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
     }
 
     @ExceptionHandler(IllegalStateException.class)

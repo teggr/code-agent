@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 /**
@@ -32,7 +33,10 @@ public class AgentEventWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         String sessionId = extractSessionId(session);
-        Consumer<String> subscriber = event -> send(session, event);
+        // WebSocketSession.sendMessage is not thread-safe; agent events can arrive concurrently
+        // from the Copilot SDK's callback thread(s), so serialize writes per client connection.
+        WebSocketSession concurrentSession = new ConcurrentWebSocketSessionDecorator(session, 5000, 64 * 1024);
+        Consumer<String> subscriber = event -> send(concurrentSession, event);
         session.getAttributes().put(SESSION_ID_ATTR, sessionId);
         session.getAttributes().put(SUBSCRIBER_ATTR, subscriber);
         eventHub.subscribe(sessionId, subscriber);

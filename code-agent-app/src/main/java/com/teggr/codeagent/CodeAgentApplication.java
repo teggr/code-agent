@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import com.github.copilot.CopilotClient;
 import com.github.copilot.generated.AssistantMessageEvent;
 import com.github.copilot.generated.SessionIdleEvent;
+import com.github.copilot.rpc.CopilotClientOptions;
 import com.github.copilot.rpc.MessageOptions;
 import com.github.copilot.rpc.PermissionHandler;
 import com.github.copilot.rpc.SessionConfig;
@@ -28,8 +29,11 @@ public class CodeAgentApplication {
 
             System.out.println("Getting client");
 
+            var options = new CopilotClientOptions()
+    .setCliUrl("localhost:4321");
 
-            try (var client = new CopilotClient()) {
+
+            try (var client = new CopilotClient(options)) {
 
                 System.out.println("Starting client");
 

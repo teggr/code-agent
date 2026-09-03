@@ -17,10 +17,15 @@
     <maven.compiler.release>25</maven.compiler.release>
     <spring-boot.version>4.1.1</spring-boot.version>
     <copilot-sdk-java.version>1.0.13-preview.1</copilot-sdk-java.version>
+    <docker-maven-plugin.version>0.46.0</docker-maven-plugin.version>
+    <!-- Copilot CLI release baked into the runner image: "latest" or a tag such as v0.0.369 -->
+    <copilot-cli.version>latest</copilot-cli.version>
+    <docker.skip>false</docker.skip>
   </properties>
 
   <modules>
     <module>code-agent-app</module>
+    <module>code-agent-runner</module>
   </modules>
 
   <dependencyManagement>
@@ -47,6 +52,11 @@
           <groupId>org.springframework.boot</groupId>
           <artifactId>spring-boot-maven-plugin</artifactId>
           <version>${spring-boot.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>io.fabric8</groupId>
+          <artifactId>docker-maven-plugin</artifactId>
+          <version>${docker-maven-plugin.version}</version>
         </plugin>
       </plugins>
     </pluginManagement>

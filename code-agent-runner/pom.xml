@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.teggr.codeagent</groupId>
+    <artifactId>code-agent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>code-agent-runner</artifactId>
+  <packaging>pom</packaging>
+  <name>code-agent-runner</name>
+  <description>Docker image used to build code repositories. Standalone from code-agent-app: it contains only the Copilot CLI, served on port 4321, and never packages the application jar.</description>
+
+  <properties>
+    <docker.image.name>teggr/code-agent-runner</docker.image.name>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>io.fabric8</groupId>
+        <artifactId>docker-maven-plugin</artifactId>
+        <configuration>
+          <skip>${docker.skip}</skip>
+          <images>
+            <image>
+              <name>${docker.image.name}:${project.version}</name>
+              <build>
+                <contextDir>${project.basedir}</contextDir>
+                <dockerFile>src/main/docker/Dockerfile</dockerFile>
+                <args>
+                  <COPILOT_CLI_VERSION>${copilot-cli.version}</COPILOT_CLI_VERSION>
+                </args>
+                <tags>
+                  <tag>latest</tag>
+                </tags>
+              </build>
+            </image>
+          </images>
+        </configuration>
+        <executions>
+          <execution>
+            <id>build-image</id>
+            <phase>package</phase>
+            <goals>
+              <goal>build</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

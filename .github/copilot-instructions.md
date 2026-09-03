@@ -3,8 +3,9 @@
 Service that lets developers run coding and AI agent code-generation, both on a local laptop and on a cloud VPS, from a single deployable artifact. See [README.md](../README.md).
 
 ## Module map (Maven multi-module, root [pom.xml](../pom.xml))
-- Root `pom.xml` is a `pom`-packaged parent/aggregator (shared Spring Boot BOM, Java version, plugin management) with a single child module today.
-- `gateway-app` — the only module: Spring Boot entrypoint (`GatewayApplication`) plus the `AgentHarness`/`AgentSession` abstraction and its [Copilot Java SDK](https://github.github.com/copilot-sdk-java/1.0.13-preview.1/) implementation (`com.teggr.codeagent.agent.copilot`), kept together deliberately — split the harness into its own module only once a real second SDK is added. Requires the Copilot CLI on `PATH` at runtime. Still a preview dependency — check for newer versions before upgrading.
+- Root `pom.xml` is a `pom`-packaged parent/aggregator (shared Spring Boot BOM, Java version, plugin management).
+- `gateway-app` — Spring Boot entrypoint (`GatewayApplication`) plus the `AgentHarness`/`AgentSession` abstraction and its [Copilot Java SDK](https://github.github.com/copilot-sdk-java/1.0.13-preview.1/) implementation (`com.teggr.codeagent.agent.copilot`), kept together deliberately — split the harness into its own module only once a real second SDK is added. Requires the Copilot CLI on `PATH` at runtime. Still a preview dependency — check for newer versions before upgrading.
+- `code-agent-runner` — `pom`-packaged, no Java sources. Builds the Docker image used to build code repositories (Ubuntu + Copilot CLI, served on port 4321) via `io.fabric8:docker-maven-plugin`. Deliberately standalone: it never packages the app jar and does not depend on `code-agent-app`; the only coupling is the port 4321 network contract.
 
 If/when a second agent SDK is added, extract `AgentHarness`/`AgentSession` into their own module first so other modules never depend on SDK-specific types directly.
 

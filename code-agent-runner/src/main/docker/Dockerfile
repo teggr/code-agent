@@ -30,6 +30,9 @@ WORKDIR /workspace
 VOLUME ["/workspace"]
 
 # Authenticate at run time with COPILOT_GITHUB_TOKEN, GH_TOKEN or GITHUB_TOKEN.
+# --host 0.0.0.0 is required: the CLI server binds to 127.0.0.1 by default,
+# which is unreachable via Docker's published port (host traffic is delivered
+# to the container's network interface, not its loopback).
 EXPOSE 4321
 ENTRYPOINT ["copilot"]
-CMD ["--server", "--port", "4321"]
+CMD ["--headless", "--host", "0.0.0.0", "--port", "4321"]

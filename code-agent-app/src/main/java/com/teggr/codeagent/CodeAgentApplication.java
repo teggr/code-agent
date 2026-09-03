@@ -20,7 +20,6 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
-import com.github.dockerjava.api.model.Ports;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
@@ -45,15 +44,15 @@ public class CodeAgentApplication {
                 .build();
             var dockerClient = DockerClientImpl.getInstance(dockerConfig, dockerHttpClient);
             
-            String containerId = null;
+            ContainerLaunch containerLaunch = null;
             
             try {
-                // Launch Docker container
-                containerId = launchContainer(dockerClient);
-                System.out.println("Container started with ID: " + containerId);
+                containerLaunch = launchContainer(dockerClient);
+                System.out.println("Container started with ID: " + containerLaunch.containerId()
+                        + " on host port " + containerLaunch.hostPort());
                 
                 // Register shutdown hook for cleanup
-                final String finalContainerId = containerId;
+                final String finalContainerId = containerLaunch.containerId();
                 var containerCleanedUp = new AtomicBoolean();
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     if (containerCleanedUp.compareAndSet(false, true)) {
@@ -66,14 +65,14 @@ public class CodeAgentApplication {
                 }));
                 
                 // Connect to CLI and run example
-                runCopilotClient();
+                runCopilotClient(containerLaunch.hostPort());
                 
             } catch (Exception e) {
                 System.err.println("Error during startup: " + e.getMessage());
                 e.printStackTrace();
-                if (containerId != null) {
+                if (containerLaunch != null) {
                     try {
-                        stopContainer(dockerClient, containerId);
+                        stopContainer(dockerClient, containerLaunch.containerId());
                     } catch (Exception stopError) {
                         System.err.println("Error stopping container after failure: " + stopError.getMessage());
                     }
@@ -83,7 +82,7 @@ public class CodeAgentApplication {
         };
     }
     
-    private String launchContainer(DockerClient dockerClient) throws Exception {
+    private ContainerLaunch launchContainer(DockerClient dockerClient) throws Exception {
         String image = "teggr/code-agent-runner:0.1.0-SNAPSHOT";
         String ghToken = System.getenv("GH_TOKEN");
         
@@ -92,15 +91,12 @@ public class CodeAgentApplication {
         }
         
         try {
-            // Create container with port binding
             ExposedPort exposedPort = ExposedPort.tcp(4321);
-            Ports portBindings = new Ports();
-            portBindings.bind(exposedPort, Ports.Binding.bindPort(4321));
             
             CreateContainerResponse container = dockerClient.createContainerCmd(image)
                 .withExposedPorts(exposedPort)
                 .withHostConfig(HostConfig.newHostConfig()
-                    .withPortBindings(portBindings)
+                    .withPublishAllPorts(true)
                 )
                 .withEnv("GH_TOKEN=" + ghToken)
                 .exec();
@@ -110,24 +106,40 @@ public class CodeAgentApplication {
             // Start the container
             dockerClient.startContainerCmd(containerId).exec();
             
-            return containerId;
+            return new ContainerLaunch(containerId, getAllocatedHostPort(dockerClient, containerId, exposedPort));
         } catch (Exception e) {
-            if (e.getMessage().contains("pull access denied") || e.getMessage().contains("image not found")) {
+            String message = e.getMessage();
+            if (message != null && (message.contains("pull access denied") || message.contains("image not found"))) {
                 throw new RuntimeException("Docker image not found: " + image + ". Please build it with: mvnw verify -pl code-agent-runner", e);
-            } else if (e.getMessage().contains("Bind for 0.0.0.0:4321")) {
-                throw new RuntimeException("Port 4321 is already in use. Stop any existing containers or services using this port.", e);
-            } else if (e.getMessage().contains("Cannot connect to Docker daemon")) {
+            } else if (message != null && message.contains("Cannot connect to Docker daemon")) {
                 throw new RuntimeException("Docker daemon is not running. Please start Docker and try again.", e);
             }
             throw e;
         }
     }
     
-    private void runCopilotClient() throws Exception {
+    private int getAllocatedHostPort(DockerClient dockerClient, String containerId, ExposedPort exposedPort) {
+        var containerInfo = dockerClient.inspectContainerCmd(containerId).exec();
+        var portBindings = containerInfo.getNetworkSettings().getPorts().getBindings().get(exposedPort);
+
+        if (portBindings == null || portBindings.length == 0 || portBindings[0].getHostPortSpec() == null) {
+            throw new IllegalStateException("Docker did not publish a host port for container port "
+                    + exposedPort.getPort());
+        }
+
+        try {
+            return Integer.parseInt(portBindings[0].getHostPortSpec());
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("Docker returned an invalid host port for container port "
+                    + exposedPort.getPort() + ": " + portBindings[0].getHostPortSpec(), e);
+        }
+    }
+
+    private void runCopilotClient(int hostPort) throws Exception {
         int maxRetries = 30;
         int retryDelayMs = 500;
         int startTimeoutSeconds = 5;
-        System.out.println("Connecting to Copilot CLI (" + maxRetries + " attempts, "
+        System.out.println("Connecting to Copilot CLI on host port " + hostPort + " (" + maxRetries + " attempts, "
                 + retryDelayMs + "ms apart)");
         
         for (int i = 0; i < maxRetries; i++) {
@@ -135,7 +147,7 @@ public class CodeAgentApplication {
             System.out.println("Starting Copilot client (attempt " + attempt + " of " + maxRetries + ")");
             try {
                 var options = new CopilotClientOptions()
-                    .setCliUrl("localhost:4321")
+                    .setCliUrl("localhost:" + hostPort)
                     .setLogLevel("debug");
                 try (var client = new CopilotClient(options)) {
                     client.start().get(startTimeoutSeconds, TimeUnit.SECONDS);
@@ -181,6 +193,9 @@ public class CodeAgentApplication {
         } catch (Exception e) {
             System.err.println("Error during container cleanup: " + e.getMessage());
         }
+    }
+
+    private record ContainerLaunch(String containerId, int hostPort) {
     }
 
 }

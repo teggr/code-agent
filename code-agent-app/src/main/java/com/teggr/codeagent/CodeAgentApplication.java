@@ -98,7 +98,8 @@ public class CodeAgentApplication {
                 .withHostConfig(HostConfig.newHostConfig()
                     .withPublishAllPorts(true)
                 )
-                .withEnv("GH_TOKEN=" + ghToken)
+                .withEnv("GH_TOKEN=" + ghToken,
+                    "GIT_REPO_URL=https://github.com/teggr/j2html-toolkit")
                 .exec();
             
             String containerId = container.getId();
@@ -166,7 +167,7 @@ public class CodeAgentApplication {
                     });
                     session.on(SessionIdleEvent.class, idle -> done.complete(null));
             
-                    session.send(new MessageOptions().setPrompt("What is 2+2?")).get();
+                    session.send(new MessageOptions().setPrompt("Summarize the project in the current working directory in one paragraph.")).get();
                     done.get();
             
                     System.out.println("Example message completed successfully");

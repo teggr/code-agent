@@ -25,6 +25,11 @@ RUN useradd --create-home --uid 1001 agent \
     && mkdir -p /workspace \
     && chown agent:agent /workspace
 
+# Clones GIT_REPO_URL (if set) into /workspace and cd's into it before starting the CLI,
+# so the server's project root is the cloned repository.
+COPY src/main/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 USER agent
 WORKDIR /workspace
 VOLUME ["/workspace"]
@@ -34,5 +39,5 @@ VOLUME ["/workspace"]
 # which is unreachable via Docker's published port (host traffic is delivered
 # to the container's network interface, not its loopback).
 EXPOSE 4321
-ENTRYPOINT ["copilot"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["--headless", "--host", "0.0.0.0", "--port", "4321"]

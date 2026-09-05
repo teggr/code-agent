@@ -32,9 +32,11 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 public class CodeAgentApplication {
 
     private static final String EXAMPLE_PROMPT = """
-        Summarize the project in the current working directory in one paragraph.
-        Also, what version of Java and Maven is installed in your environment?
-        Finally, run `docker version` and report the Docker engine you can reach.
+        Demonstrate GitHub resource access and PR capabilities in your environment:
+        1. Run `gh auth status` to confirm GitHub CLI authentication.
+        2. List open and recent GitHub issues for this repository using `gh issue list`.
+        3. List open and recent Pull Requests for this repository using `gh pr list`.
+        4. Check git remote configuration and verify you can create branches and PRs (`gh pr create --help`).
         """;
 
     public static void main(String[] args) {
@@ -55,6 +57,7 @@ public class CodeAgentApplication {
             var dockerClient = DockerClientImpl.getInstance(dockerConfig, dockerHttpClient);
             
             ContainerLaunch containerLaunch = null;
+            var containerCleanedUp = new AtomicBoolean();
             
             try {
                 containerLaunch = launchContainer(dockerClient);
@@ -63,7 +66,6 @@ public class CodeAgentApplication {
                 
                 // Register shutdown hook for cleanup
                 final String finalContainerId = containerLaunch.containerId();
-                var containerCleanedUp = new AtomicBoolean();
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     if (containerCleanedUp.compareAndSet(false, true)) {
                         try {
@@ -80,14 +82,15 @@ public class CodeAgentApplication {
             } catch (Exception e) {
                 System.err.println("Error during startup: " + e.getMessage());
                 e.printStackTrace();
-                if (containerLaunch != null) {
+                throw new RuntimeException(e);
+            } finally {
+                if (containerLaunch != null && containerCleanedUp.compareAndSet(false, true)) {
                     try {
                         stopContainer(dockerClient, containerLaunch.containerId());
                     } catch (Exception stopError) {
-                        System.err.println("Error stopping container after failure: " + stopError.getMessage());
+                        System.err.println("Error stopping container in finally block: " + stopError.getMessage());
                     }
                 }
-                throw new RuntimeException(e);
             }
         };
     }

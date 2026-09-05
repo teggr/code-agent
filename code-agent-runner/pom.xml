@@ -38,6 +38,7 @@
                   <PLAYWRIGHT_VERSION>${playwright.version}</PLAYWRIGHT_VERSION>
                   <PLAYWRIGHT_MCP_VERSION>${playwright-mcp.version}</PLAYWRIGHT_MCP_VERSION>
                   <DOCKER_CLI_VERSION>${docker-cli.version}</DOCKER_CLI_VERSION>
+                  <GH_CLI_VERSION>${gh-cli.version}</GH_CLI_VERSION>
                 </args>
                 <tags>
                   <tag>latest</tag>

@@ -8,6 +8,8 @@ ARG PLAYWRIGHT_VERSION
 ARG PLAYWRIGHT_MCP_VERSION
 # Docker client tools: "latest" or a version string such as 5:29.7.2-1~ubuntu.24.04~noble.
 ARG DOCKER_CLI_VERSION=latest
+# GitHub CLI: "latest" or a version string.
+ARG GH_CLI_VERSION=latest
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -61,6 +63,20 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /
     && docker --version \
     && docker buildx version \
     && docker compose version
+
+# GitHub CLI (gh) so the agent can inspect issues/PRs and perform GitHub operations natively.
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && if [ "$GH_CLI_VERSION" = "latest" ]; then \
+        apt-get install -y --no-install-recommends gh; \
+    else \
+        apt-get install -y --no-install-recommends "gh=${GH_CLI_VERSION}"; \
+    fi \
+    && rm -rf /var/lib/apt/lists/* \
+    && gh --version
 
 # Pre-installed globally so `npx` resolves them without a network call at container start,
 # and configured to skip Playwright's own browser download since system Chrome is used instead.

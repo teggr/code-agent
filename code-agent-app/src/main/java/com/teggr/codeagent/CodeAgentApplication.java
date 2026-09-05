@@ -27,6 +27,11 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 @SpringBootApplication
 public class CodeAgentApplication {
 
+    private static final String EXAMPLE_PROMPT = """
+        Summarize the project in the current working directory in one paragraph.
+        Also, what version of Java and Maven is installed in your environment?
+        """;
+
     public static void main(String[] args) {
         SpringApplication.run(CodeAgentApplication.class, args);
     }
@@ -167,7 +172,7 @@ public class CodeAgentApplication {
                     });
                     session.on(SessionIdleEvent.class, idle -> done.complete(null));
             
-                    session.send(new MessageOptions().setPrompt("Summarize the project in the current working directory in one paragraph.")).get();
+                    session.send(new MessageOptions().setPrompt(EXAMPLE_PROMPT)).get();
                     done.get();
             
                     System.out.println("Example message completed successfully");

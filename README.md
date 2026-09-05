@@ -19,7 +19,8 @@ mvnw.cmd verify -pl code-agent-runner
 
 Skip the image build (e.g. on a machine without Docker) with `-Ddocker.skip=true`. Pin the CLI with
 `-Dcopilot-cli.version=v0.0.369` and Mise with `-Dmise.version=2025.1.3`. Pin Playwright with
-`-Dplaywright.version=1.62.1` and Playwright MCP with `-Dplaywright-mcp.version=0.0.80`.
+`-Dplaywright.version=1.62.1` and Playwright MCP with `-Dplaywright-mcp.version=0.0.80`. Pin the
+VS Code standalone CLI with `-Dvscode-cli.version=<version>` (defaults to `latest`).
 
 Run it, supplying a token with the Copilot Requests permission:
 
@@ -106,3 +107,32 @@ Two caveats:
 - Containers started from inside the runner are siblings on the host daemon, so relative bind
   mounts in a project's compose file resolve against host paths, not the runner's `/workspace`.
   Named volumes, networks, image builds, and published ports work as usual.
+
+## Opening the workspace in VS Code
+
+You can attach to the container's `/workspace` in VS Code either locally or remotely:
+
+### Local container attach (Dev Containers)
+
+When `code-agent-app` launches the runner container, it logs the direct VS Code attach link and CLI command:
+
+```text
+Open workspace in VS Code (attached container):
+  CLI: code --folder-uri vscode-remote://attached-container+<short-id>/workspace
+  URL: vscode://vscode-remote/attached-container+<short-id>/workspace
+```
+
+Opening the URL or running the CLI command attaches VS Code directly to the container using the
+**Dev Containers** (`ms-vscode-remote.remote-containers`) extension.
+
+### Remote container access (VS Code Tunnels)
+
+The runner image bakes in the standalone VS Code CLI (`code`). When running on a remote cloud VPS,
+you can start a secure tunnel from inside the container:
+
+```bash
+docker exec -it <container-id> code tunnel --accept-server-license-terms
+```
+
+You can then open the workspace from your desktop VS Code via the **Remote - Tunnels** extension,
+or directly in your browser at `https://vscode.dev/tunnel/<tunnel-name>/workspace`.

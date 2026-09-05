@@ -10,6 +10,8 @@ ARG PLAYWRIGHT_MCP_VERSION
 ARG DOCKER_CLI_VERSION=latest
 # GitHub CLI: "latest" or a version string.
 ARG GH_CLI_VERSION=latest
+# VS Code standalone CLI: "latest" or a version string.
+ARG VSCODE_CLI_VERSION=latest
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -77,6 +79,16 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     fi \
     && rm -rf /var/lib/apt/lists/* \
     && gh --version
+
+# VS Code standalone CLI so developers can attach via VS Code Tunnels or manage the container.
+RUN if [ "$VSCODE_CLI_VERSION" = "latest" ]; then \
+        curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" \
+            | tar -xz -C /usr/local/bin; \
+    else \
+        curl -fsSL "https://update.code.visualstudio.com/commit:${VSCODE_CLI_VERSION}/cli-alpine-x64/stable" \
+            | tar -xz -C /usr/local/bin; \
+    fi \
+    && code --version
 
 # Pre-installed globally so `npx` resolves them without a network call at container start,
 # and configured to skip Playwright's own browser download since system Chrome is used instead.

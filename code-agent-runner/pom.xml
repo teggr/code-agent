@@ -17,6 +17,7 @@
 
   <properties>
     <docker.image.name>teggr/code-agent-runner</docker.image.name>
+    <vscode-cli.version>latest</vscode-cli.version>
   </properties>
 
   <build>
@@ -39,6 +40,7 @@
                   <PLAYWRIGHT_MCP_VERSION>${playwright-mcp.version}</PLAYWRIGHT_MCP_VERSION>
                   <DOCKER_CLI_VERSION>${docker-cli.version}</DOCKER_CLI_VERSION>
                   <GH_CLI_VERSION>${gh-cli.version}</GH_CLI_VERSION>
+                  <VSCODE_CLI_VERSION>${vscode-cli.version}</VSCODE_CLI_VERSION>
                 </args>
                 <tags>
                   <tag>latest</tag>

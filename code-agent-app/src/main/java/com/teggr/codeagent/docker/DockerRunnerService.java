@@ -51,7 +51,14 @@ public class DockerRunnerService {
 
             dockerClient.startContainerCmd(containerId).exec();
 
-            return new ContainerLaunch(containerId, getAllocatedHostPort(containerId, exposedPort));
+            ContainerLaunch launch = new ContainerLaunch(containerId, getAllocatedHostPort(containerId, exposedPort));
+            System.out.println("Container started with ID: " + launch.containerId()
+                    + " on host port " + launch.hostPort());
+            System.out.println("Open workspace in VS Code (attached container):");
+            System.out.println("  CLI: " + launch.devContainerCliCommand());
+            System.out.println("  URL: " + launch.devContainerUri());
+
+            return launch;
         } catch (Exception e) {
             String message = e.getMessage();
             if (message != null && (message.contains("pull access denied") || message.contains("image not found"))) {

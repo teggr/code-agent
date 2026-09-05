@@ -18,7 +18,8 @@ mvnw.cmd verify -pl code-agent-runner
 ```
 
 Skip the image build (e.g. on a machine without Docker) with `-Ddocker.skip=true`. Pin the CLI with
-`-Dcopilot-cli.version=v0.0.369` and Mise with `-Dmise.version=2025.1.3`.
+`-Dcopilot-cli.version=v0.0.369` and Mise with `-Dmise.version=2025.1.3`. Pin Playwright with
+`-Dplaywright.version=1.62.1` and Playwright MCP with `-Dplaywright-mcp.version=0.0.80`.
 
 Run it, supplying a token with the Copilot Requests permission:
 
@@ -61,6 +62,14 @@ therefore use either `mvn -version` or the repository wrapper:
 ```text
 ./mvnw --no-transfer-progress test
 ```
+
+## Browser automation
+
+The image bakes in Node.js, system Google Chrome, and Playwright, matching the browser automation
+setup on the [cloudagent VPS](https://github.com/teggr/cloudagent/blob/main/environment.md#browser-automation).
+A `playwright` MCP server is registered on startup via Copilot's `--additional-mcp-config` flag,
+pointing at `/etc/code-agent/mcp-config.json`, which launches `@playwright/mcp` against the system
+Chrome executable (`/opt/google/chrome/chrome`) instead of a Playwright-managed browser download.
 
 The container starts `copilot --server --port 4321`, which `CopilotClientOptions.setCliUrl` in
 `code-agent-app` connects to.

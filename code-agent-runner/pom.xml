@@ -35,6 +35,8 @@
                 <args>
                   <COPILOT_CLI_VERSION>${copilot-cli.version}</COPILOT_CLI_VERSION>
                   <MISE_VERSION>${mise.version}</MISE_VERSION>
+                  <PLAYWRIGHT_VERSION>${playwright.version}</PLAYWRIGHT_VERSION>
+                  <PLAYWRIGHT_MCP_VERSION>${playwright-mcp.version}</PLAYWRIGHT_MCP_VERSION>
                 </args>
                 <tags>
                   <tag>latest</tag>

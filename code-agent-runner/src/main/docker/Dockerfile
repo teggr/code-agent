@@ -4,12 +4,15 @@ FROM ubuntu:24.04
 # "latest" or a release tag such as v0.0.369.
 ARG COPILOT_CLI_VERSION=latest
 ARG MISE_VERSION
+ARG PLAYWRIGHT_VERSION
+ARG PLAYWRIGHT_MCP_VERSION
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         git \
+        gnupg \
         gosu \
         jq \
         openssh-client \
@@ -23,6 +26,27 @@ RUN if [ "$COPILOT_CLI_VERSION" = "latest" ]; then \
         curl -fsSL https://gh.io/copilot-install | VERSION="$COPILOT_CLI_VERSION" bash; \
     fi \
     && copilot --version
+
+# System Google Chrome, used by Playwright MCP instead of a Playwright-managed browser download.
+RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+        > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/* \
+    && google-chrome --version
+
+# Node.js is a prerequisite for the Copilot CLI's own npm install path and for Playwright/npx.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version
+
+# Pre-installed globally so `npx` resolves them without a network call at container start,
+# and configured to skip Playwright's own browser download since system Chrome is used instead.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \
+    && npx playwright --version
 
 RUN useradd --create-home --uid 1001 agent \
     && mkdir -p /workspace \
@@ -43,6 +67,9 @@ RUN curl -fsSL "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/m
 COPY src/main/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# MCP server registration baked into the image and passed to Copilot via --additional-mcp-config.
+COPY src/main/docker/mcp-config.json /etc/code-agent/mcp-config.json
+
 WORKDIR /workspace
 VOLUME ["/workspace"]
 VOLUME ["/mise"]
@@ -53,4 +80,4 @@ VOLUME ["/mise"]
 # to the container's network interface, not its loopback).
 EXPOSE 4321
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["--headless", "--host", "0.0.0.0", "--port", "4321"]
+CMD ["--headless", "--host", "0.0.0.0", "--port", "4321", "--additional-mcp-config", "@/etc/code-agent/mcp-config.json"]

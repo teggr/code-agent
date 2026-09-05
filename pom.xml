@@ -21,6 +21,9 @@
     <!-- Copilot CLI release baked into the runner image: "latest" or a tag such as v0.0.369 -->
     <copilot-cli.version>latest</copilot-cli.version>
     <mise.version>2025.1.3</mise.version>
+    <!-- Browser automation baked into the runner image: system Chrome + Playwright MCP. -->
+    <playwright.version>1.62.1</playwright.version>
+    <playwright-mcp.version>0.0.80</playwright-mcp.version>
     <docker.skip>false</docker.skip>
   </properties>
 

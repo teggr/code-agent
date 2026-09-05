@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
 import com.github.copilot.CopilotClient;
@@ -44,7 +45,7 @@ public class CodeAgentApplication {
     }
 
     @Bean
-    ApplicationRunner applicationRunner() {
+    ApplicationRunner applicationRunner(ApplicationContext context) {
         return args -> {
             System.out.println("Starting application with Docker container...");
             
@@ -58,6 +59,7 @@ public class CodeAgentApplication {
             
             ContainerLaunch containerLaunch = null;
             var containerCleanedUp = new AtomicBoolean();
+            int exitCode = 0;
             
             try {
                 containerLaunch = launchContainer(dockerClient);
@@ -82,7 +84,7 @@ public class CodeAgentApplication {
             } catch (Exception e) {
                 System.err.println("Error during startup: " + e.getMessage());
                 e.printStackTrace();
-                throw new RuntimeException(e);
+                exitCode = 1;
             } finally {
                 if (containerLaunch != null && containerCleanedUp.compareAndSet(false, true)) {
                     try {
@@ -92,6 +94,10 @@ public class CodeAgentApplication {
                     }
                 }
             }
+
+            System.out.println("Run finished; shutting down with exit code " + exitCode);
+            int finalExitCode = exitCode;
+            System.exit(SpringApplication.exit(context, () -> finalExitCode));
         };
     }
     

@@ -6,6 +6,8 @@ ARG COPILOT_CLI_VERSION=latest
 ARG MISE_VERSION
 ARG PLAYWRIGHT_VERSION
 ARG PLAYWRIGHT_MCP_VERSION
+# Docker client tools: "latest" or a version string such as 5:29.7.2-1~ubuntu.24.04~noble.
+ARG DOCKER_CLI_VERSION=latest
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -41,6 +43,24 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && node --version
+
+# Docker client tools (CLI + buildx + compose, no dockerd) so projects in the runner can build
+# images and run services against the host daemon, which is reached via a bind-mounted
+# /var/run/docker.sock supplied at container launch.
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" \
+        > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && if [ "$DOCKER_CLI_VERSION" = "latest" ]; then \
+        apt-get install -y --no-install-recommends docker-ce-cli; \
+    else \
+        apt-get install -y --no-install-recommends "docker-ce-cli=${DOCKER_CLI_VERSION}"; \
+    fi \
+    && apt-get install -y --no-install-recommends docker-buildx-plugin docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/* \
+    && docker --version \
+    && docker buildx version \
+    && docker compose version
 
 # Pre-installed globally so `npx` resolves them without a network call at container start,
 # and configured to skip Playwright's own browser download since system Chrome is used instead.

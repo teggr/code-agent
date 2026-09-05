@@ -1,5 +1,7 @@
 package com.teggr.codeagent;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -18,8 +20,10 @@ import com.github.copilot.rpc.PermissionHandler;
 import com.github.copilot.rpc.SessionConfig;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.Volume;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
@@ -30,6 +34,7 @@ public class CodeAgentApplication {
     private static final String EXAMPLE_PROMPT = """
         Summarize the project in the current working directory in one paragraph.
         Also, what version of Java and Maven is installed in your environment?
+        Finally, run `docker version` and report the Docker engine you can reach.
         """;
 
     public static void main(String[] args) {
@@ -97,11 +102,14 @@ public class CodeAgentApplication {
         
         try {
             ExposedPort exposedPort = ExposedPort.tcp(4321);
-            
+            Bind dockerSocketBind = resolveDockerSocketBind(dockerClient);
+            System.out.println("Mounting Docker socket into runner: " + dockerSocketBind);
+
             CreateContainerResponse container = dockerClient.createContainerCmd(image)
                 .withExposedPorts(exposedPort)
                 .withHostConfig(HostConfig.newHostConfig()
                     .withPublishAllPorts(true)
+                    .withBinds(dockerSocketBind)
                 )
                 .withEnv("GH_TOKEN=" + ghToken,
                     "GIT_REPO_URL=https://github.com/teggr/j2html-toolkit")
@@ -124,6 +132,43 @@ public class CodeAgentApplication {
         }
     }
     
+    /**
+     * Resolves the bind mount that gives the runner container access to the host's Docker daemon
+     * (Docker-outside-of-Docker), so projects in the runner can build images and run services.
+     * Detection is based on the daemon's own report rather than the launcher OS: Docker Desktop
+     * (Windows/macOS) serves a Linux VM whose socket it accepts in bind mounts from either host,
+     * while a native Linux host (e.g. the VPS) exposes the socket directly.
+     */
+    private Bind resolveDockerSocketBind(DockerClient dockerClient) {
+        var info = dockerClient.infoCmd().exec();
+        String osType = info.getOsType();
+        String operatingSystem = info.getOperatingSystem();
+        String dockerRootDir = info.getDockerRootDir();
+
+        if ("windows".equalsIgnoreCase(osType)) {
+            throw new IllegalStateException(
+                    "The Docker daemon is running Windows containers; the runner requires Linux-container mode. "
+                    + "Switch Docker Desktop to Linux containers and try again.");
+        }
+
+        boolean dockerDesktop = operatingSystem != null && operatingSystem.contains("Docker Desktop");
+        if (dockerDesktop) {
+            // Docker Desktop's Linux VM socket; it accepts this path in bind mounts from Windows and macOS hosts.
+            return new Bind("/var/run/docker.sock", new Volume("/var/run/docker.sock"));
+        }
+
+        var socketPath = Path.of("/var/run/docker.sock");
+        if (Files.exists(socketPath)) {
+            return new Bind(socketPath.toString(), new Volume("/var/run/docker.sock"));
+        }
+
+        throw new IllegalStateException(
+                "No usable Docker socket found: the runner requires /var/run/docker.sock to be mountable. "
+                + "On Windows/macOS use Docker Desktop in Linux-container mode; on Linux run a standard Docker daemon. "
+                + "(daemon reported osType=" + osType + ", operatingSystem=" + operatingSystem
+                + ", dockerRootDir=" + dockerRootDir + ")");
+    }
+
     private int getAllocatedHostPort(DockerClient dockerClient, String containerId, ExposedPort exposedPort) {
         var containerInfo = dockerClient.inspectContainerCmd(containerId).exec();
         var portBindings = containerInfo.getNetworkSettings().getPorts().getBindings().get(exposedPort);

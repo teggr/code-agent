@@ -3,6 +3,21 @@ set -euo pipefail
 
 if [ "$(id -u)" = "0" ]; then
     chown -R agent:agent "${XDG_STATE_HOME:-/mise/state}" "${MISE_CONFIG_DIR:-/mise/config}" "${MISE_DATA_DIR:-/mise/data}" "${MISE_CACHE_DIR:-/mise/cache}"
+
+    # Grant the agent user access to a bind-mounted host Docker socket (DooD). The socket's
+    # group id varies per host (the host's docker group on Linux, root on Docker Desktop), so
+    # map whatever GID the socket carries onto a group the agent user belongs to.
+    if [ -S /var/run/docker.sock ]; then
+        DOCKER_SOCK_GID=$(stat -c %g /var/run/docker.sock)
+        if getent group "${DOCKER_SOCK_GID}" > /dev/null 2>&1; then
+            DOCKER_SOCK_GROUP=$(getent group "${DOCKER_SOCK_GID}" | cut -d: -f1)
+        else
+            DOCKER_SOCK_GROUP=docker-host
+            groupadd --gid "${DOCKER_SOCK_GID}" "${DOCKER_SOCK_GROUP}"
+        fi
+        usermod --append --groups "${DOCKER_SOCK_GROUP}" agent
+    fi
+
     exec gosu agent "$0" "$@"
 fi
 

@@ -73,3 +73,36 @@ Chrome executable (`/opt/google/chrome/chrome`) instead of a Playwright-managed 
 
 The container starts `copilot --server --port 4321`, which `CopilotClientOptions.setCliUrl` in
 `code-agent-app` connects to.
+
+## Docker inside the runner
+
+The runner image includes the Docker CLI, buildx, and the compose plugin (no daemon), so projects
+can build images, run local services, or use Testcontainers. The daemon is the host's own, reached
+through a bind-mounted `/var/run/docker.sock` (Docker-outside-of-Docker).
+
+When `code-agent-app` launches the runner it mounts the socket automatically. Detection is based
+on the daemon's own report: Docker Desktop (Windows/macOS) mounts its Linux VM socket, and a
+native Linux host (e.g. the VPS) mounts the real socket. If no usable socket is found — for
+example Docker Desktop in Windows-container mode — the launch fails with a clear error. Docker
+Desktop must be in Linux-container mode.
+
+Running the image directly, mount the socket yourself:
+
+```text
+docker run --rm -p 4321:4321 -e GH_TOKEN=<token> -v /var/run/docker.sock:/var/run/docker.sock teggr/code-agent-runner
+```
+
+At startup the entrypoint maps the socket's group onto the non-root `agent` user, so `docker`
+commands work without root inside the container. The socket's group id varies per host: the
+`docker` group on Linux, root on Docker Desktop.
+
+Pin the CLI with `-Ddocker-cli.version=5:29.7.2-1~ubuntu.24.04~noble` (the default `latest`
+tracks Docker's apt repository).
+
+Two caveats:
+
+- The mounted socket grants root-equivalent control of the host Docker daemon. Only run
+  repositories you trust, exactly as if you gave them Docker access on the host directly.
+- Containers started from inside the runner are siblings on the host daemon, so relative bind
+  mounts in a project's compose file resolve against host paths, not the runner's `/workspace`.
+  Named volumes, networks, image builds, and published ports work as usual.

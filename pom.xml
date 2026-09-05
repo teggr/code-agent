@@ -24,6 +24,8 @@
     <!-- Browser automation baked into the runner image: system Chrome + Playwright MCP. -->
     <playwright.version>1.62.1</playwright.version>
     <playwright-mcp.version>0.0.80</playwright-mcp.version>
+    <!-- Docker CLI baked into the runner image: "latest" or a version string such as 5:29.7.2-1~ubuntu.24.04~noble -->
+    <docker-cli.version>latest</docker-cli.version>
     <docker.skip>false</docker.skip>
   </properties>
 

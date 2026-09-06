@@ -10,14 +10,14 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
-import com.teggr.codeagent.agent.AgentHarness;
-import com.teggr.codeagent.agent.AgentHarnessFactory;
-import com.teggr.codeagent.docker.ContainerLaunch;
-import com.teggr.codeagent.docker.DockerRunnerService;
+import com.teggr.codeagent.runner.Runner;
+import com.teggr.codeagent.runner.RunnerManager;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
 public class CodeAgentApplication {
+
+    private static final String DEMO_REPO_URL = "https://github.com/teggr/j2html-toolkit";
 
     private static final String EXAMPLE_PROMPT = """
         Demonstrate GitHub resource access and PR capabilities in your environment:
@@ -51,36 +51,35 @@ public class CodeAgentApplication {
     }
 
     @Bean
-    ApplicationRunner applicationRunner(ApplicationContext context, DockerRunnerService dockerRunnerService,
-            AgentHarnessFactory agentHarnessFactory) {
+    ApplicationRunner applicationRunner(ApplicationContext context, RunnerManager runnerManager) {
         return args -> {
-            System.out.println("Starting application with Docker container...");
+            System.out.println("Starting application with Docker containers...");
 
-            ContainerLaunch containerLaunch = null;
-            var containerCleanedUp = new AtomicBoolean();
+            var runnersStopped = new AtomicBoolean();
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                if (runnersStopped.compareAndSet(false, true)) {
+                    runnerManager.stopAll();
+                }
+            }));
+
             int exitCode = 0;
-
             try {
-                containerLaunch = dockerRunnerService.launch();
-                System.out.println("Container started with ID: " + containerLaunch.containerId()
-                        + " on host port " + containerLaunch.hostPort());
+                // Launch two runners for the same repo to demonstrate multiple concurrent runners per repository.
+                Runner first = runnerManager.start(DEMO_REPO_URL);
+                logRunnerStarted(first);
+                Runner second = runnerManager.start(DEMO_REPO_URL);
+                logRunnerStarted(second);
 
-                final String finalContainerId = containerLaunch.containerId();
-                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    if (containerCleanedUp.compareAndSet(false, true)) {
-                        dockerRunnerService.stop(finalContainerId);
-                    }
-                }));
-
-                runAgentPrompt(agentHarnessFactory, containerLaunch.hostPort());
+                runAgentPrompt(first);
+                runAgentPrompt(second);
 
             } catch (Exception e) {
                 System.err.println("Error during startup: " + e.getMessage());
                 e.printStackTrace();
                 exitCode = 1;
             } finally {
-                if (containerLaunch != null && containerCleanedUp.compareAndSet(false, true)) {
-                    dockerRunnerService.stop(containerLaunch.containerId());
+                if (runnersStopped.compareAndSet(false, true)) {
+                    runnerManager.stopAll();
                 }
             }
 
@@ -90,20 +89,24 @@ public class CodeAgentApplication {
         };
     }
 
-    private void runAgentPrompt(AgentHarnessFactory agentHarnessFactory, int hostPort) throws Exception {
-        try (AgentHarness harness = agentHarnessFactory.connect(hostPort)) {
-            var session = harness.createSession();
+    private void logRunnerStarted(Runner runner) {
+        System.out.println("Runner [" + runner.id() + "] started: repo=" + runner.repoUrl()
+                + ", container=" + runner.containerLaunch().containerId()
+                + ", hostPort=" + runner.containerLaunch().hostPort());
+    }
 
-            System.out.println("Sending message");
-            var done = new CompletableFuture<Void>();
-            session.onMessage(content -> System.out.println("Response: " + content));
-            session.onIdle(() -> done.complete(null));
+    private void runAgentPrompt(Runner runner) throws Exception {
+        var session = runner.harness().createSession();
 
-            session.sendPrompt(EXAMPLE_PROMPT);
-            done.get();
+        System.out.println("Sending message to runner " + runner.id());
+        var done = new CompletableFuture<Void>();
+        session.onMessage(content -> System.out.println("Response [" + runner.id() + "]: " + content));
+        session.onIdle(() -> done.complete(null));
 
-            System.out.println("Example message completed successfully");
-        }
+        session.sendPrompt(EXAMPLE_PROMPT);
+        done.get();
+
+        System.out.println("Runner " + runner.id() + " completed successfully");
     }
 
 }

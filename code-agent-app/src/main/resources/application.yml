@@ -1,7 +1,6 @@
 codeagent:
   runner:
     image: teggr/code-agent-runner:0.1.0-SNAPSHOT
-    git-repo-url: https://github.com/teggr/j2html-toolkit
     gh-token: ${GH_TOKEN:}
   agent:
     max-retries: 30

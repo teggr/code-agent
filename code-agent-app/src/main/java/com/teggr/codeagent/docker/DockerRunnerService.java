@@ -24,7 +24,7 @@ public class DockerRunnerService {
         this.properties = properties;
     }
 
-    public ContainerLaunch launch() throws Exception {
+    public ContainerLaunch launch(String gitRepoUrl) throws Exception {
         String image = properties.getImage();
         String ghToken = properties.getGhToken();
 
@@ -44,7 +44,7 @@ public class DockerRunnerService {
                     .withBinds(dockerSocketBind)
                 )
                 .withEnv("GH_TOKEN=" + ghToken,
-                    "GIT_REPO_URL=" + properties.getGitRepoUrl())
+                    "GIT_REPO_URL=" + gitRepoUrl)
                 .exec();
 
             String containerId = container.getId();

@@ -2,12 +2,15 @@ package com.teggr.codeagent.docker;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Volume;
@@ -15,6 +18,9 @@ import com.github.dockerjava.api.model.Volume;
 /** Launches and tears down the code-agent-runner container that serves the Copilot CLI. */
 @Service
 public class DockerRunnerService {
+
+    /** Label applied to every runner container so orphans from a previous, uncleanly-stopped run can be found. */
+    static final String MANAGED_LABEL = "codeagent.managed";
 
     private final DockerClient dockerClient;
     private final DockerRunnerProperties properties;
@@ -43,6 +49,7 @@ public class DockerRunnerService {
                     .withPublishAllPorts(true)
                     .withBinds(dockerSocketBind)
                 )
+                .withLabels(Map.of(MANAGED_LABEL, "true"))
                 .withEnv("GH_TOKEN=" + ghToken,
                     "GIT_REPO_URL=" + gitRepoUrl)
                 .exec();
@@ -78,6 +85,28 @@ public class DockerRunnerService {
             System.out.println("Container stopped and removed");
         } catch (Exception e) {
             System.err.println("Error during container cleanup: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Stops and removes any labeled runner containers left behind by a previous, uncleanly-stopped
+     * run (e.g. the JVM was force-killed and never reached the graceful shutdown path). Every
+     * labeled container found here is by definition an orphan, since this runs before any runner
+     * has been started in the current process.
+     */
+    public void pruneOrphans() {
+        List<Container> orphans = dockerClient.listContainersCmd()
+            .withShowAll(true)
+            .withLabelFilter(Map.of(MANAGED_LABEL, "true"))
+            .exec();
+
+        if (orphans.isEmpty()) {
+            return;
+        }
+
+        System.out.println("Found " + orphans.size() + " orphaned runner container(s) from a previous run; cleaning up");
+        for (Container orphan : orphans) {
+            stop(orphan.getId());
         }
     }
 

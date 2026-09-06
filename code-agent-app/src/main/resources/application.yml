@@ -2,6 +2,7 @@ codeagent:
   runner:
     image: teggr/code-agent-runner:0.1.0-SNAPSHOT
     gh-token: ${GH_TOKEN:}
+    prune-orphans-on-startup: true
   agent:
     max-retries: 30
     retry-delay-ms: 500

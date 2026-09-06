@@ -10,6 +10,9 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 
+import com.teggr.codeagent.docker.DockerRunnerProperties;
+import com.teggr.codeagent.docker.DockerRunnerService;
+
 @SpringBootApplication
 @ConfigurationPropertiesScan
 public class CodeAgentApplication {
@@ -27,6 +30,21 @@ public class CodeAgentApplication {
                 }
             } catch (Exception e) {
                 System.err.println("Unable to open desktop browser automatically: " + e.getMessage());
+            }
+        };
+    }
+
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> orphanRunnerCleanup(
+            DockerRunnerService dockerRunnerService, DockerRunnerProperties properties) {
+        return event -> {
+            if (!properties.isPruneOrphansOnStartup()) {
+                return;
+            }
+            try {
+                dockerRunnerService.pruneOrphans();
+            } catch (Exception e) {
+                System.err.println("Unable to prune orphaned runner containers: " + e.getMessage());
             }
         };
     }

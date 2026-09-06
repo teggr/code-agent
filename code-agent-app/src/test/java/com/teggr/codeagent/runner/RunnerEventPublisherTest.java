@@ -92,6 +92,29 @@ class RunnerEventPublisherTest {
     }
 
     @Test
+    void blankMessagesAreNotStoredOrPublished() {
+        SseEmitter emitter = publisher.subscribe("runner-1");
+        RunnerSession session = session("runner-1", "repo");
+        session.setListener(new RunnerSessionListener() {
+            @Override
+            public void onMessage(RunnerSession s, ChatMessage message) {
+                publisher.publishMessage(s, message);
+            }
+
+            @Override
+            public void onStatusChange(RunnerSession s, RunnerStatus status) {
+                publisher.publishStatus(s, status);
+            }
+        });
+        int eventsBeforeMessage = sent(emitter).size();
+
+        session.addMessage("assistant", "  \n\t");
+
+        assertThat(session.messages()).isEmpty();
+        assertThat(sent(emitter)).hasSize(eventsBeforeMessage);
+    }
+
+    @Test
     void dashboardSubscribersReceiveRunnerListOnMessage() {
         SseEmitter dashboard = publisher.subscribeDashboard();
         RunnerSession session = session("runner-9", "some-repo");

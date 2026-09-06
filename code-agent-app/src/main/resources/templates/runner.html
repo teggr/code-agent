@@ -12,6 +12,7 @@
     .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
     .row textarea { flex: 1; padding: 10px 12px; border: 2px solid #2a2a2a; border-radius: 8px; font-size: 14px; }
     .button { background: white; color: #111; border: 2px solid #333; border-radius: 8px; padding: 8px 12px; cursor: pointer; text-decoration: none; }
+    .top-nav { margin-bottom: 16px; }
     .meta { color: #555; font-size: 13px; }
     .messages { border: 2px solid #333; border-radius: 10px; padding: 12px; background: white; }
     .msg { padding: 8px 0; border-bottom: 1px solid #d0d0d0; white-space: pre-wrap; }
@@ -21,6 +22,7 @@
 </head>
 <body>
   <div class="shell" hx-ext="sse" th:attr="sse-connect=|/runners/${runnerId}/events|">
+    <nav class="top-nav"><a class="button" href="/">Back to dashboard</a></nav>
     <div class="panel">
       <div class="row"><h2>Runner: <span th:text="${runnerId}">runner-id</span></h2></div>
       <div class="meta">Repo: <span th:text="${repoUrl}">repo-url</span></div>
@@ -43,7 +45,6 @@
         </div>
         <div class="row">
           <button class="button" type="submit">Send message</button>
-          <a class="button" href="/">Back to dashboard</a>
         </div>
       </form>
     </div>

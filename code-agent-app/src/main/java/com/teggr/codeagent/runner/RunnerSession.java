@@ -57,6 +57,9 @@ public class RunnerSession {
     }
 
     public void addMessage(String role, String content) {
+        if (content == null || content.isBlank()) {
+            return;
+        }
         if ("assistant".equals(role)) {
             System.out.println("[runner " + runner.id() + "] Assistant message captured: " + abbreviate(content));
         }

@@ -27,6 +27,7 @@
         <div class="row">
           <span class="status" th:text="${runnerSession.status}">IDLE</span>
           <a class="button" th:href="|/runners/${runnerSession.runner.id}|">Open</a>
+          <a class="button" th:href="${runnerSession.runner.containerLaunch.devContainerUri}">VS Code</a>
         </div>
       </div>
     </div>

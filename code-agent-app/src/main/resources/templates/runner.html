@@ -22,7 +22,10 @@
 </head>
 <body>
   <div class="shell" hx-ext="sse" th:attr="sse-connect=|/runners/${runnerId}/events|">
-    <nav class="top-nav"><a class="button" href="/">Back to dashboard</a></nav>
+    <nav class="top-nav">
+      <a class="button" href="/">Back to dashboard</a>
+      <a class="button" th:href="${devContainerUri}">VS Code</a>
+    </nav>
     <div class="panel">
       <div class="row"><h2>Runner: <span th:text="${runnerId}">runner-id</span></h2></div>
       <div class="meta">Repo: <span th:text="${repoUrl}">repo-url</span></div>

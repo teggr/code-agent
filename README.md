@@ -17,10 +17,18 @@ copilot --server --port 4321
 mvnw.cmd verify -pl code-agent-runner
 ```
 
-Skip the image build (e.g. on a machine without Docker) with `-Ddocker.skip=true`. Pin the CLI with
-`-Dcopilot-cli.version=v0.0.369` and Mise with `-Dmise.version=2025.1.3`. Pin Playwright with
-`-Dplaywright.version=1.62.1` and Playwright MCP with `-Dplaywright-mcp.version=0.0.80`. Pin the
-VS Code standalone CLI with `-Dvscode-cli.version=<version>` (defaults to `latest`).
+The Maven build uses Fabric8's Docker API integration instead of shelling out to `docker build`,
+so the first visible step is creating `target/docker/.../docker-build.tar` before Docker receives
+the build context.
+
+Skip the image build for a fast Maven validation with `mvnw.cmd -pl code-agent-runner
+"-Ddocker.skip=true" verify`. Pin the CLI with `-Dcopilot-cli.version=v0.0.369` and Mise with
+`-Dmise.version=2025.1.3`. Pin Playwright with `-Dplaywright.version=1.62.1` and Playwright MCP
+with `-Dplaywright-mcp.version=0.0.80`. Pin the VS Code standalone CLI with
+`-Dvscode-cli.version=<version>` (defaults to `latest`). To speed up first attach from desktop
+VS Code, the runner preinstalls the server for the latest VS Code CLI by default. Use
+`"-Dvscode-server.commit=<desktop-commit>"` in PowerShell to target a specific desktop build, or
+`"-Dvscode-server.commit=none"` to skip the server preinstall.
 
 Run it, supplying a token with the Copilot Requests permission:
 
@@ -118,8 +126,8 @@ When `code-agent-app` launches the runner container, it logs the direct VS Code 
 
 ```text
 Open workspace in VS Code (attached container):
-  CLI: code --folder-uri vscode-remote://attached-container+<short-id>/workspace
-  URL: vscode://vscode-remote/attached-container+<short-id>/workspace
+  CLI: code --new-window --folder-uri vscode-remote://attached-container+<hex-encoded-short-id>/workspace
+  URL: vscode://vscode-remote/attached-container+<hex-encoded-short-id>/workspace?windowId=_blank
 ```
 
 Opening the URL or running the CLI command attaches VS Code directly to the container using the

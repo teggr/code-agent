@@ -12,6 +12,11 @@ ARG DOCKER_CLI_VERSION=latest
 ARG GH_CLI_VERSION=latest
 # VS Code standalone CLI: "latest" or a version string.
 ARG VSCODE_CLI_VERSION=latest
+# VS Code Server commit to preinstall for faster Dev Containers attach. Use "latest" to match the CLI.
+ARG VSCODE_SERVER_COMMIT=latest
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Etc/UTC
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -89,6 +94,20 @@ RUN if [ "$VSCODE_CLI_VERSION" = "latest" ]; then \
             | tar -xz -C /usr/local/bin; \
     fi \
     && code --version
+
+RUN if [ "$VSCODE_SERVER_COMMIT" = "latest" ]; then \
+        server_dir="$(mktemp -d)" \
+    && curl -fsSL "https://update.code.visualstudio.com/latest/server-linux-x64/stable" \
+            | tar -xz --strip-components=1 -C "$server_dir" \
+        && resolved_commit="$(jq -r .commit "$server_dir/product.json")" \
+        && mkdir -p "/root/.vscode-server/bin/${resolved_commit}" \
+        && mv "$server_dir"/* "/root/.vscode-server/bin/${resolved_commit}" \
+        && rmdir "$server_dir"; \
+    elif [ "$VSCODE_SERVER_COMMIT" != "none" ]; then \
+        mkdir -p "/root/.vscode-server/bin/${VSCODE_SERVER_COMMIT}" \
+        && curl -fsSL "https://update.code.visualstudio.com/commit:${VSCODE_SERVER_COMMIT}/server-linux-x64/stable" \
+            | tar -xz --strip-components=1 -C "/root/.vscode-server/bin/${VSCODE_SERVER_COMMIT}"; \
+    fi
 
 # Pre-installed globally so `npx` resolves them without a network call at container start,
 # and configured to skip Playwright's own browser download since system Chrome is used instead.

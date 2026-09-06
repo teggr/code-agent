@@ -1,5 +1,8 @@
 package com.teggr.codeagent.docker;
 
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
+
 public record ContainerLaunch(
         String containerId,
         int hostPort,
@@ -20,10 +23,16 @@ public record ContainerLaunch(
     }
 
     private static String buildDevContainerUri(String containerId, String workspacePath) {
-        return "vscode://vscode-remote/attached-container+" + shortContainerId(containerId) + workspacePath;
+        return "vscode://vscode-remote/attached-container+" + hexEncodedContainerId(containerId) + workspacePath
+                + "?windowId=_blank";
     }
 
     private static String buildDevContainerCliCommand(String containerId, String workspacePath) {
-        return "code --folder-uri vscode-remote://attached-container+" + shortContainerId(containerId) + workspacePath;
+        return "code --new-window --folder-uri vscode-remote://attached-container+" + hexEncodedContainerId(containerId)
+                + workspacePath;
+    }
+
+    private static String hexEncodedContainerId(String containerId) {
+        return HexFormat.of().formatHex(shortContainerId(containerId).getBytes(StandardCharsets.UTF_8));
     }
 }

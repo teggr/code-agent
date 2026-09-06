@@ -18,6 +18,7 @@
   <properties>
     <docker.image.name>teggr/code-agent-runner</docker.image.name>
     <vscode-cli.version>latest</vscode-cli.version>
+    <vscode-server.commit>latest</vscode-server.commit>
   </properties>
 
   <build>
@@ -27,6 +28,7 @@
         <artifactId>docker-maven-plugin</artifactId>
         <configuration>
           <skip>${docker.skip}</skip>
+          <verbose>true</verbose>
           <images>
             <image>
               <name>${docker.image.name}:${project.version}</name>
@@ -41,6 +43,7 @@
                   <DOCKER_CLI_VERSION>${docker-cli.version}</DOCKER_CLI_VERSION>
                   <GH_CLI_VERSION>${gh-cli.version}</GH_CLI_VERSION>
                   <VSCODE_CLI_VERSION>${vscode-cli.version}</VSCODE_CLI_VERSION>
+                  <VSCODE_SERVER_COMMIT>${vscode-server.commit}</VSCODE_SERVER_COMMIT>
                 </args>
                 <tags>
                   <tag>latest</tag>

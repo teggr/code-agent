@@ -54,6 +54,7 @@ public class RunnerWebController {
         view.addObject("repoUrl", session.runner().repoUrl());
         view.addObject("status", session.status());
         view.addObject("messages", session.messages());
+        view.addObject("devContainerUri", session.runner().containerLaunch().devContainerUri());
         return view;
     }
 

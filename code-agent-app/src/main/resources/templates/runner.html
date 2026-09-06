@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta th:if="${status.name() == 'BUSY' or status.name() == 'STARTING'}" http-equiv="refresh" content="3"/>
+  <title>Runner</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 32px; }
+    .shell { max-width: 1000px; margin: 0 auto; }
+    .panel { background: white; border: 2px solid #333; border-radius: 14px; padding: 18px; margin-bottom: 24px; box-shadow: 4px 4px 0 #d9d9d9; }
+    .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+    .row textarea { flex: 1; padding: 10px 12px; border: 2px solid #2a2a2a; border-radius: 8px; font-size: 14px; }
+    .button { background: white; color: #111; border: 2px solid #333; border-radius: 8px; padding: 8px 12px; cursor: pointer; text-decoration: none; }
+    .meta { color: #555; font-size: 13px; }
+    .messages { border: 2px solid #333; border-radius: 10px; padding: 12px; background: white; }
+    .msg { padding: 8px 0; border-bottom: 1px solid #d0d0d0; white-space: pre-wrap; }
+    .msg:last-child { border-bottom: none; }
+    .role { font-weight: bold; display: inline-block; width: 80px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="panel">
+      <div class="row"><h2>Runner: <span th:text="${runnerId}">runner-id</span></h2></div>
+      <div class="meta">Repo: <span th:text="${repoUrl}">repo-url</span></div>
+      <div class="meta">Status: <span th:text="${status}">IDLE</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="messages">
+        <div class="msg" th:each="message : ${messages}">
+          <span class="role" th:text="${message.role}">user</span>
+          <span th:text="${message.content}">content</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <form method="post" th:action="|/runners/${runnerId}/prompt|">
+        <div class="row">
+          <textarea name="prompt" rows="5" placeholder="Send a message to this runner"></textarea>
+        </div>
+        <div class="row">
+          <button class="button" type="submit">Send message</button>
+          <a class="button" href="/">Back to dashboard</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

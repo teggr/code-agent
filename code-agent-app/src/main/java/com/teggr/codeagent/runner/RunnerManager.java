@@ -6,11 +6,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import jakarta.annotation.PreDestroy;
 
 import org.springframework.stereotype.Service;
 
 import com.teggr.codeagent.agent.AgentHarness;
 import com.teggr.codeagent.agent.AgentHarnessFactory;
+import com.teggr.codeagent.agent.AgentSession;
 import com.teggr.codeagent.docker.ContainerLaunch;
 import com.teggr.codeagent.docker.DockerRunnerService;
 
@@ -20,7 +25,8 @@ public class RunnerManager {
 
     private final DockerRunnerService dockerRunnerService;
     private final AgentHarnessFactory agentHarnessFactory;
-    private final Map<String, Runner> activeRunners = new ConcurrentHashMap<>();
+    private final Map<String, RunnerSession> activeRunners = new ConcurrentHashMap<>();
+    private final ExecutorService executor = Executors.newCachedThreadPool();
 
     public RunnerManager(DockerRunnerService dockerRunnerService, AgentHarnessFactory agentHarnessFactory) {
         this.dockerRunnerService = dockerRunnerService;
@@ -39,21 +45,71 @@ public class RunnerManager {
         }
 
         Runner runner = new Runner(UUID.randomUUID().toString(), repoUrl, containerLaunch, harness);
-        activeRunners.put(runner.id(), runner);
+        RunnerSession session = new RunnerSession(runner);
+        session.attachAgent(harness.createSession());
+        session.setStatus(RunnerStatus.IDLE);
+        activeRunners.put(runner.id(), session);
         return runner;
     }
 
+    public RunnerSession startAsync(String repoUrl, String prompt) {
+        String runnerId = UUID.randomUUID().toString();
+        Runner placeholder = new Runner(runnerId, repoUrl, new ContainerLaunch("pending", 0), null);
+        RunnerSession session = new RunnerSession(placeholder);
+        session.addMessage("user", prompt);
+        session.setStatus(RunnerStatus.STARTING);
+        activeRunners.put(runnerId, session);
+
+        executor.submit(() -> {
+            try {
+                System.out.println("[runner " + runnerId + "] Launching container for " + repoUrl);
+                ContainerLaunch containerLaunch = dockerRunnerService.launch(repoUrl);
+                System.out.println("[runner " + runnerId + "] Container " + containerLaunch.containerId()
+                        + " on host port " + containerLaunch.hostPort() + "; connecting agent");
+                AgentHarness harness = agentHarnessFactory.connect(containerLaunch.hostPort());
+                Runner startedRunner = new Runner(runnerId, repoUrl, containerLaunch, harness);
+                session.setRunner(startedRunner);
+                session.attachAgent(harness.createSession());
+                System.out.println("[runner " + runnerId + "] Session created; sending prompt");
+                session.setStatus(RunnerStatus.BUSY);
+                session.agentSession().sendPrompt(prompt);
+                System.out.println("[runner " + runnerId + "] Prompt acknowledged by server");
+            } catch (Exception e) {
+                System.err.println("[runner " + runnerId + "] Failed: " + e.getMessage());
+                e.printStackTrace();
+                session.setStatus(RunnerStatus.FAILED);
+                session.addMessage("assistant", "Error starting runner: " + e.getMessage());
+            }
+        });
+
+        return session;
+    }
+
+    public RunnerSession start(String repoUrl, String prompt) throws Exception {
+        RunnerSession session = startAsync(repoUrl, prompt);
+        while (session.status() == RunnerStatus.STARTING) {
+            Thread.sleep(25);
+        }
+        return session;
+    }
+
     public void stop(String runnerId) {
-        Runner runner = activeRunners.remove(runnerId);
-        if (runner == null) {
+        RunnerSession session = activeRunners.remove(runnerId);
+        if (session == null) {
             throw new IllegalArgumentException("No active runner with id " + runnerId);
         }
+        Runner runner = session.runner();
         try {
+            AgentSession agentSession = session.agentSession();
+            if (agentSession != null) {
+                // AgentSession is a simple wrapper over the Copilot session; this is best-effort cleanup.
+            }
             runner.harness().close();
         } catch (Exception e) {
             System.err.println("Error closing agent harness for runner " + runnerId + ": " + e.getMessage());
         } finally {
             dockerRunnerService.stop(runner.containerLaunch().containerId());
+            session.setStatus(RunnerStatus.STOPPED);
         }
     }
 
@@ -68,12 +124,27 @@ public class RunnerManager {
         }
     }
 
-    public Runner get(String runnerId) {
+    @PreDestroy
+    public void shutdown() {
+        stopAll();
+        executor.shutdownNow();
+    }
+
+    public RunnerSession getSession(String runnerId) {
         return activeRunners.get(runnerId);
     }
 
-    public Collection<Runner> list() {
+    public Runner get(String runnerId) {
+        RunnerSession session = activeRunners.get(runnerId);
+        return session == null ? null : session.runner();
+    }
+
+    public Collection<RunnerSession> list() {
         return List.copyOf(activeRunners.values());
+    }
+
+    public ExecutorService executor() {
+        return executor;
     }
 
 }

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Code Agent</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 32px; }
+    .shell { max-width: 1200px; margin: 0 auto; }
+    .panel { background: white; border: 2px solid #333; border-radius: 14px; padding: 18px; margin-bottom: 24px; box-shadow: 4px 4px 0 #d9d9d9; }
+    .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+    .row input, .row textarea, .row select { flex: 1; padding: 10px 12px; border: 2px solid #2a2a2a; border-radius: 8px; font-size: 14px; }
+    .card { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border: 2px solid #2a2a2a; border-radius: 10px; background: #fafafa; margin-bottom: 10px; }
+    .button { background: white; color: #111; border: 2px solid #333; border-radius: 8px; padding: 8px 12px; cursor: pointer; text-decoration: none; }
+    .meta { font-size: 13px; color: #555; }
+    .status { display: inline-block; padding: 4px 8px; border: 1px solid #333; border-radius: 99px; font-size: 12px; }
+    .messages { border: 2px solid #333; border-radius: 10px; padding: 12px; background: white; }
+    .msg { padding: 8px 0; border-bottom: 1px solid #d0d0d0; }
+    .msg:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="panel">
+      <h2>Start a new runner</h2>
+      <form method="post" action="/runners">
+        <div class="row">
+          <input name="repoUrl" value="https://github.com/teggr/j2html-toolkit" placeholder="Repository URL"/>
+        </div>
+        <div class="row">
+          <textarea name="prompt" rows="5" placeholder="Describe the task you want the agent to run"></textarea>
+        </div>
+        <div class="row">
+          <button class="button" type="submit">Start task</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Running runners</h2>
+      <div th:if="${#lists.isEmpty(runners)}">
+        <p>No active runners.</p>
+      </div>
+      <div th:unless="${#lists.isEmpty(runners)}">
+        <div class="card" th:each="runnerSession : ${runners}">
+          <div>
+            <div><strong>Runner:</strong> <span th:text="${runnerSession.runner.id}">runner-id</span></div>
+            <div class="meta">Repo: <span th:text="${runnerSession.runner.repoUrl}">repo-url</span></div>
+            <div class="meta">Last message: <span th:text="${runnerSession.lastMessage()}">No messages yet</span></div>
+          </div>
+          <div class="row">
+            <span class="status" th:text="${runnerSession.status}">IDLE</span>
+            <a class="button" th:href="|/runners/${runnerSession.runner.id}|">Open</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

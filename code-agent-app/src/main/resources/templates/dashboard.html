@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2/sse.js"></script>
   <title>Code Agent</title>
   <style>
     body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 32px; }
@@ -19,7 +21,7 @@
   </style>
 </head>
 <body>
-  <div class="shell">
+  <div class="shell" hx-ext="sse" sse-connect="/runners/events">
     <div class="panel">
       <h2>Start a new runner</h2>
       <form method="post" action="/runners">
@@ -37,21 +39,8 @@
 
     <div class="panel">
       <h2>Running runners</h2>
-      <div th:if="${#lists.isEmpty(runners)}">
-        <p>No active runners.</p>
-      </div>
-      <div th:unless="${#lists.isEmpty(runners)}">
-        <div class="card" th:each="runnerSession : ${runners}">
-          <div>
-            <div><strong>Runner:</strong> <span th:text="${runnerSession.runner.id}">runner-id</span></div>
-            <div class="meta">Repo: <span th:text="${runnerSession.runner.repoUrl}">repo-url</span></div>
-            <div class="meta">Last message: <span th:text="${runnerSession.lastMessage()}">No messages yet</span></div>
-          </div>
-          <div class="row">
-            <span class="status" th:text="${runnerSession.status}">IDLE</span>
-            <a class="button" th:href="|/runners/${runnerSession.runner.id}|">Open</a>
-          </div>
-        </div>
+      <div id="runner-list" sse-swap="runnerList">
+        <div th:replace="~{fragments :: runnerList(${runners})}"></div>
       </div>
     </div>
   </div>

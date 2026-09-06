@@ -14,9 +14,15 @@ public class RunnerSession {
     private final List<ChatMessage> messages = new CopyOnWriteArrayList<>();
     private final AtomicReference<RunnerStatus> status = new AtomicReference<>(RunnerStatus.STARTING);
     private volatile AgentSession agentSession;
+    private volatile RunnerSessionListener listener;
 
     public RunnerSession(Runner runner) {
         this.runner = runner;
+    }
+
+    /** Registers the single listener that receives message and status events. */
+    public void setListener(RunnerSessionListener listener) {
+        this.listener = listener;
     }
 
     /** Attaches the agent session and registers message listeners exactly once. */
@@ -39,7 +45,11 @@ public class RunnerSession {
     }
 
     public void setStatus(RunnerStatus newStatus) {
-        this.status.set(newStatus);
+        RunnerStatus previous = this.status.getAndSet(newStatus);
+        RunnerSessionListener current = listener;
+        if (current != null && previous != newStatus) {
+            current.onStatusChange(this, newStatus);
+        }
     }
 
     public AgentSession agentSession() {
@@ -50,7 +60,12 @@ public class RunnerSession {
         if ("assistant".equals(role)) {
             System.out.println("[runner " + runner.id() + "] Assistant message captured: " + abbreviate(content));
         }
-        this.messages.add(new ChatMessage(UUID.randomUUID().toString(), role, content, Instant.now()));
+        ChatMessage message = new ChatMessage(UUID.randomUUID().toString(), role, content, Instant.now());
+        this.messages.add(message);
+        RunnerSessionListener current = listener;
+        if (current != null) {
+            current.onMessage(this, message);
+        }
     }
 
     private static String abbreviate(String content) {

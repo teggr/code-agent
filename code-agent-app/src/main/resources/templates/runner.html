@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta th:if="${status.name() == 'BUSY' or status.name() == 'STARTING'}" http-equiv="refresh" content="3"/>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2/sse.js"></script>
   <title>Runner</title>
   <style>
     body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 32px; }
@@ -19,15 +20,15 @@
   </style>
 </head>
 <body>
-  <div class="shell">
+  <div class="shell" hx-ext="sse" th:attr="sse-connect=|/runners/${runnerId}/events|">
     <div class="panel">
       <div class="row"><h2>Runner: <span th:text="${runnerId}">runner-id</span></h2></div>
       <div class="meta">Repo: <span th:text="${repoUrl}">repo-url</span></div>
-      <div class="meta">Status: <span th:text="${status}">IDLE</span></div>
+      <div class="meta">Status: <span class="status" id="runner-status" sse-swap="status" hx-swap="outerHTML" th:text="${status}">IDLE</span></div>
     </div>
 
     <div class="panel">
-      <div class="messages">
+      <div class="messages" id="messages" sse-swap="message" hx-swap="beforeend">
         <div class="msg" th:each="message : ${messages}">
           <span class="role" th:text="${message.role}">user</span>
           <span th:text="${message.content}">content</span>

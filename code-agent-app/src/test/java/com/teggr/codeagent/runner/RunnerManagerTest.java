@@ -20,7 +20,9 @@ class RunnerManagerTest {
 
     private final DockerRunnerService dockerRunnerService = mock(DockerRunnerService.class);
     private final AgentHarnessFactory agentHarnessFactory = mock(AgentHarnessFactory.class);
-    private final RunnerManager runnerManager = new RunnerManager(dockerRunnerService, agentHarnessFactory);
+    private final RunnerEventPublisher eventPublisher = mock(RunnerEventPublisher.class);
+    private final RunnerManager runnerManager = new RunnerManager(dockerRunnerService, agentHarnessFactory,
+            eventPublisher);
 
     @Test
     void startTwiceForSameRepoProducesDistinctRunners() throws Exception {

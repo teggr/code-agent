@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.teggr.codeagent.runner.ChatMessage;
 import com.teggr.codeagent.runner.RunnerManager;
@@ -74,6 +75,19 @@ public class RunnerWebController {
             }
         });
         return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
+    }
+
+    @GetMapping("/runners/{runnerId}/events")
+    public SseEmitter runnerEvents(@PathVariable("runnerId") String runnerId) {
+        if (runnerManager.getSession(runnerId) == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
+        }
+        return runnerManager.subscribe(runnerId);
+    }
+
+    @GetMapping("/runners/events")
+    public SseEmitter dashboardEvents() {
+        return runnerManager.subscribeDashboard();
     }
 
     @GetMapping("/ui")

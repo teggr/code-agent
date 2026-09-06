@@ -9,9 +9,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.teggr.codeagent.agent.AgentHarness;
 import com.teggr.codeagent.agent.AgentHarnessFactory;
@@ -25,12 +27,42 @@ public class RunnerManager {
 
     private final DockerRunnerService dockerRunnerService;
     private final AgentHarnessFactory agentHarnessFactory;
+    private final RunnerEventPublisher eventPublisher;
     private final Map<String, RunnerSession> activeRunners = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
-    public RunnerManager(DockerRunnerService dockerRunnerService, AgentHarnessFactory agentHarnessFactory) {
+    public RunnerManager(DockerRunnerService dockerRunnerService, AgentHarnessFactory agentHarnessFactory,
+            RunnerEventPublisher eventPublisher) {
         this.dockerRunnerService = dockerRunnerService;
         this.agentHarnessFactory = agentHarnessFactory;
+        this.eventPublisher = eventPublisher;
+    }
+
+    @PostConstruct
+    void init() {
+        eventPublisher.setDashboardSessions(() -> List.copyOf(activeRunners.values()));
+    }
+
+    private void wireEvents(RunnerSession session) {
+        session.setListener(new RunnerSessionListener() {
+            @Override
+            public void onMessage(RunnerSession s, ChatMessage message) {
+                eventPublisher.publishMessage(s, message);
+            }
+
+            @Override
+            public void onStatusChange(RunnerSession s, RunnerStatus status) {
+                eventPublisher.publishStatus(s, status);
+            }
+        });
+    }
+
+    public SseEmitter subscribe(String runnerId) {
+        return eventPublisher.subscribe(runnerId);
+    }
+
+    public SseEmitter subscribeDashboard() {
+        return eventPublisher.subscribeDashboard();
     }
 
     public Runner start(String repoUrl) throws Exception {
@@ -46,9 +78,11 @@ public class RunnerManager {
 
         Runner runner = new Runner(UUID.randomUUID().toString(), repoUrl, containerLaunch, harness);
         RunnerSession session = new RunnerSession(runner);
+        wireEvents(session);
         session.attachAgent(harness.createSession());
         session.setStatus(RunnerStatus.IDLE);
         activeRunners.put(runner.id(), session);
+        eventPublisher.publishRunnerList();
         return runner;
     }
 
@@ -56,9 +90,11 @@ public class RunnerManager {
         String runnerId = UUID.randomUUID().toString();
         Runner placeholder = new Runner(runnerId, repoUrl, new ContainerLaunch("pending", 0), null);
         RunnerSession session = new RunnerSession(placeholder);
+        wireEvents(session);
         session.addMessage("user", prompt);
         session.setStatus(RunnerStatus.STARTING);
         activeRunners.put(runnerId, session);
+        eventPublisher.publishRunnerList();
 
         executor.submit(() -> {
             try {
@@ -111,6 +147,7 @@ public class RunnerManager {
             dockerRunnerService.stop(runner.containerLaunch().containerId());
             session.setStatus(RunnerStatus.STOPPED);
         }
+        eventPublisher.publishRunnerList();
     }
 
     public void stopAll() {
@@ -127,6 +164,7 @@ public class RunnerManager {
     @PreDestroy
     public void shutdown() {
         stopAll();
+        eventPublisher.closeAll();
         executor.shutdownNow();
     }
 

@@ -1,0 +1,36 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+
+  <!-- One chat message; appended via hx-swap="beforeend" on the runner page. -->
+  <div th:fragment="message(message)" class="msg">
+    <span class="role" th:text="${message.role}">user</span>
+    <span th:text="${message.content}">content</span>
+  </div>
+
+  <!-- Status badge; outerHTML-swapped in place on the runner page. Must re-declare
+       sse-swap so the replacement element keeps its event binding after each swap. -->
+  <span th:fragment="statusBadge(status)" class="status" id="runner-status" sse-swap="status" hx-swap="outerHTML" th:text="${status}">IDLE</span>
+
+  <!-- Whole runner list; innerHTML-swapped on the dashboard on any runner change. -->
+  <th:block th:fragment="runnerList(runners)">
+    <div th:if="${#lists.isEmpty(runners)}">
+      <p>No active runners.</p>
+    </div>
+    <div th:unless="${#lists.isEmpty(runners)}">
+      <div class="card" th:each="runnerSession : ${runners}">
+        <div>
+          <div><strong>Runner:</strong> <span th:text="${runnerSession.runner.id}">runner-id</span></div>
+          <div class="meta">Repo: <span th:text="${runnerSession.runner.repoUrl}">repo-url</span></div>
+          <div class="meta">Last message: <span th:text="${runnerSession.lastMessage()}">No messages yet</span></div>
+        </div>
+        <div class="row">
+          <span class="status" th:text="${runnerSession.status}">IDLE</span>
+          <a class="button" th:href="|/runners/${runnerSession.runner.id}|">Open</a>
+        </div>
+      </div>
+    </div>
+  </th:block>
+
+</body>
+</html>

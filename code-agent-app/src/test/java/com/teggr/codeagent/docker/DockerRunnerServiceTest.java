@@ -36,6 +36,24 @@ class DockerRunnerServiceTest {
     private final DockerRunnerService service = new DockerRunnerService(dockerClient, new DockerRunnerProperties());
 
     @Test
+    void launchRejectsMissingGhToken() {
+        assertThatThrownBy(() -> service.launch("https://github.com/fanduel/withdrawals"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("GH_TOKEN environment variable is not set");
+    }
+
+    @Test
+    void launchRejectsMissingCopilotToken() {
+        DockerRunnerProperties properties = new DockerRunnerProperties();
+        properties.setGitToken("git-token");
+        DockerRunnerService runnerService = new DockerRunnerService(dockerClient, properties);
+
+        assertThatThrownBy(() -> runnerService.launch("https://github.com/fanduel/withdrawals"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("COPILOT_GITHUB_TOKEN environment variable is not set");
+    }
+
+    @Test
     void pruneOrphansStopsAndRemovesEveryLabeledContainer() {
         ListContainersCmd listContainersCmd = mock(ListContainersCmd.class, org.mockito.Answers.RETURNS_SELF);
         Container orphan1 = mock(Container.class);

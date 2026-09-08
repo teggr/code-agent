@@ -16,4 +16,6 @@ public interface AgentSession {
 
     void onIdle(Runnable listener);
 
+    void onError(Consumer<String> listener);
+
 }

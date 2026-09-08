@@ -11,9 +11,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.teggr.codeagent.agent.AgentHarness;
 import com.teggr.codeagent.agent.AgentHarnessFactory;
+import com.teggr.codeagent.agent.AgentSession;
 import com.teggr.codeagent.docker.ContainerLaunch;
 import com.teggr.codeagent.docker.DockerRunnerService;
 
@@ -59,6 +61,24 @@ class RunnerManagerTest {
         assertThat(session.runner().repoUrl()).isEqualTo(repoUrl);
         assertThat(session.messages()).extracting("content").contains(prompt);
         assertThat(session.status()).isEqualTo(RunnerStatus.BUSY);
+    }
+
+    @Test
+    void sessionErrorMarksRunnerFailedAndAddsErrorMessage() {
+        AgentSession agentSession = mock(AgentSession.class);
+        ArgumentCaptor<Runnable> idleListenerCaptor = ArgumentCaptor.forClass(Runnable.class);
+        ArgumentCaptor<java.util.function.Consumer<String>> errorListenerCaptor = ArgumentCaptor.forClass(java.util.function.Consumer.class);
+
+        RunnerSession session = new RunnerSession(new Runner("runner-1", "repo", new ContainerLaunch("container-1", 1111), null));
+        session.attachAgent(agentSession);
+        verify(agentSession).onIdle(idleListenerCaptor.capture());
+        verify(agentSession).onError(errorListenerCaptor.capture());
+
+        errorListenerCaptor.getValue().accept("authentication expired");
+        idleListenerCaptor.getValue().run();
+
+        assertThat(session.status()).isEqualTo(RunnerStatus.FAILED);
+        assertThat(session.messages()).extracting("content").contains("Copilot error: authentication expired");
     }
 
     @Test

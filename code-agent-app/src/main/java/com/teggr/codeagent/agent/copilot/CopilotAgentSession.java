@@ -4,6 +4,7 @@ import java.util.function.Consumer;
 
 import com.github.copilot.CopilotSession;
 import com.github.copilot.generated.AssistantMessageEvent;
+import com.github.copilot.generated.SessionErrorEvent;
 import com.github.copilot.generated.SessionIdleEvent;
 import com.github.copilot.rpc.MessageOptions;
 import com.teggr.codeagent.agent.AgentSession;
@@ -29,6 +30,11 @@ class CopilotAgentSession implements AgentSession {
     @Override
     public void onIdle(Runnable listener) {
         session.on(SessionIdleEvent.class, event -> listener.run());
+    }
+
+    @Override
+    public void onError(Consumer<String> listener) {
+        session.on(SessionErrorEvent.class, event -> listener.accept(event.getData().message()));
     }
 
 }

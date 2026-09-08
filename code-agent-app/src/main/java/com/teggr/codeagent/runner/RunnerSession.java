@@ -29,7 +29,15 @@ public class RunnerSession {
     public void attachAgent(AgentSession agentSession) {
         this.agentSession = agentSession;
         agentSession.onMessage(content -> addMessage("assistant", content));
-        agentSession.onIdle(() -> setStatus(RunnerStatus.IDLE));
+        agentSession.onIdle(() -> {
+            if (status() != RunnerStatus.FAILED) {
+                setStatus(RunnerStatus.IDLE);
+            }
+        });
+        agentSession.onError(error -> {
+            setStatus(RunnerStatus.FAILED);
+            addMessage("assistant", "Copilot error: " + error);
+        });
     }
 
     public Runner runner() {

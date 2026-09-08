@@ -30,7 +30,10 @@ VS Code, the runner preinstalls the server for the latest VS Code CLI by default
 `"-Dvscode-server.commit=<desktop-commit>"` in PowerShell to target a specific desktop build, or
 `"-Dvscode-server.commit=none"` to skip the server preinstall.
 
-Run it, supplying a token with the Copilot Requests permission:
+Run the application with separate credentials: `GH_TOKEN` must access the repository, while
+`COPILOT_GITHUB_TOKEN` must be a personal-account fine-grained token with the **Copilot Requests**
+account permission. The application supplies the repository credential to the runner as `GH_TOKEN`
+for cloning and the Copilot credential as `COPILOT_GITHUB_TOKEN` for agent requests.
 
 ```text
 docker run --rm -p 4321:4321 -e GH_TOKEN=<token> -v ${PWD}:/workspace teggr/code-agent-runner

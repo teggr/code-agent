@@ -1,7 +1,8 @@
 codeagent:
   runner:
     image: teggr/code-agent-runner:0.1.0-SNAPSHOT
-    gh-token: ${GH_TOKEN:}
+    git-token: ${GH_TOKEN:}
+    copilot-token: ${COPILOT_GITHUB_TOKEN:}
     prune-orphans-on-startup: true
     # Socket path as seen by the daemon's host, bind-mounted into the runner for Docker-outside-of-Docker.
     # Blank uses /var/run/docker.sock; set e.g. ${XDG_RUNTIME_DIR}/podman/podman.sock for rootless Podman.

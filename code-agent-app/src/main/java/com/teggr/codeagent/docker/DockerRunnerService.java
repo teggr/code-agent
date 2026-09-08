@@ -38,10 +38,14 @@ public class DockerRunnerService {
 
     public ContainerLaunch launch(String gitRepoUrl) throws Exception {
         String image = properties.getImage();
-        String ghToken = properties.getGhToken();
+        String gitToken = properties.getGitToken();
+        String copilotToken = properties.getCopilotToken();
 
-        if (ghToken == null || ghToken.isEmpty()) {
+        if (gitToken == null || gitToken.isEmpty()) {
             throw new IllegalStateException("GH_TOKEN environment variable is not set");
+        }
+        if (copilotToken == null || copilotToken.isEmpty()) {
+            throw new IllegalStateException("COPILOT_GITHUB_TOKEN environment variable is not set");
         }
 
         try {
@@ -56,7 +60,8 @@ public class DockerRunnerService {
                     .withBinds(dockerSocketBind)
                 )
                 .withLabels(Map.of(MANAGED_LABEL, "true"))
-                .withEnv("GH_TOKEN=" + ghToken,
+                .withEnv("GH_TOKEN=" + gitToken,
+                    "COPILOT_GITHUB_TOKEN=" + copilotToken,
                     "GIT_REPO_URL=" + gitRepoUrl)
                 .exec();
 

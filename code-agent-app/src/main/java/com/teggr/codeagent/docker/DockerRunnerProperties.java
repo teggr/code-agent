@@ -6,7 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class DockerRunnerProperties {
 
     private String image = "teggr/code-agent-runner:0.1.0-SNAPSHOT";
-    private String ghToken = "";
+    private String gitToken = "";
+    private String copilotToken = "";
     private boolean pruneOrphansOnStartup = true;
     private String dockerSocketPath = "";
 
@@ -18,12 +19,20 @@ public class DockerRunnerProperties {
         this.image = image;
     }
 
-    public String getGhToken() {
-        return ghToken;
+    public String getGitToken() {
+        return gitToken;
     }
 
-    public void setGhToken(String ghToken) {
-        this.ghToken = ghToken;
+    public void setGitToken(String gitToken) {
+        this.gitToken = gitToken;
+    }
+
+    public String getCopilotToken() {
+        return copilotToken;
+    }
+
+    public void setCopilotToken(String copilotToken) {
+        this.copilotToken = copilotToken;
     }
 
     public boolean isPruneOrphansOnStartup() {

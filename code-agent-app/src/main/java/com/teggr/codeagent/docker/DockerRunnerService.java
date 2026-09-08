@@ -1,17 +1,19 @@
 package com.teggr.codeagent.docker;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.stereotype.Service;
 
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ExposedPort;
+import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Volume;
 
@@ -21,6 +23,10 @@ public class DockerRunnerService {
 
     /** Label applied to every runner container so orphans from a previous, uncleanly-stopped run can be found. */
     static final String MANAGED_LABEL = "codeagent.managed";
+
+    private static final String DEFAULT_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
+    private static final int LOG_TAIL_LINES = 25;
+    private static final int LOG_TAIL_TIMEOUT_SECONDS = 5;
 
     private final DockerClient dockerClient;
     private final DockerRunnerProperties properties;
@@ -89,6 +95,44 @@ public class DockerRunnerService {
     }
 
     /**
+     * Fails fast when the runner container has already exited, so an entrypoint failure (bad token,
+     * unauthorised repository, clone failure) surfaces as its own error instead of an opaque
+     * connection timeout after every retry has been exhausted.
+     */
+    public void verifyRunning(String containerId) {
+        var state = dockerClient.inspectContainerCmd(containerId).exec().getState();
+        if (Boolean.TRUE.equals(state.getRunning())) {
+            return;
+        }
+        throw new IllegalStateException("Runner container " + containerId + " exited with code "
+                + state.getExitCodeLong() + " before the agent server became available. Last output:\n"
+                + tailLogs(containerId));
+    }
+
+    private String tailLogs(String containerId) {
+        var logs = new StringBuilder();
+        try {
+            dockerClient.logContainerCmd(containerId)
+                .withStdOut(true)
+                .withStdErr(true)
+                .withTail(LOG_TAIL_LINES)
+                .exec(new ResultCallback.Adapter<Frame>() {
+                    @Override
+                    public void onNext(Frame frame) {
+                        logs.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                    }
+                })
+                .awaitCompletion(LOG_TAIL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "(interrupted while reading container logs)";
+        } catch (Exception e) {
+            return "(container logs unavailable: " + e.getMessage() + ")";
+        }
+        return logs.isEmpty() ? "(no container output)" : logs.toString().strip();
+    }
+
+    /**
      * Stops and removes any labeled runner containers left behind by a previous, uncleanly-stopped
      * run (e.g. the JVM was force-killed and never reached the graceful shutdown path). Every
      * labeled container found here is by definition an orphan, since this runs before any runner
@@ -113,38 +157,24 @@ public class DockerRunnerService {
     /**
      * Resolves the bind mount that gives the runner container access to the host's Docker daemon
      * (Docker-outside-of-Docker), so projects in the runner can build images and run services.
-     * Detection is based on the daemon's own report rather than the launcher OS: Docker Desktop
-     * (Windows/macOS) serves a Linux VM whose socket it accepts in bind mounts from either host,
-     * while a native Linux host (e.g. the VPS) exposes the socket directly.
+     * The source path is resolved by the daemon, not by this process, so it must be the socket path
+     * as seen by the daemon's own host: /var/run/docker.sock under Docker Desktop, native Linux
+     * Docker, and Podman machine alike (Podman ships a compatibility symlink there).
      */
-    private Bind resolveDockerSocketBind() {
+    Bind resolveDockerSocketBind() {
         var info = dockerClient.infoCmd().exec();
-        String osType = info.getOsType();
-        String operatingSystem = info.getOperatingSystem();
-        String dockerRootDir = info.getDockerRootDir();
 
-        if ("windows".equalsIgnoreCase(osType)) {
+        if ("windows".equalsIgnoreCase(info.getOsType())) {
             throw new IllegalStateException(
                     "The Docker daemon is running Windows containers; the runner requires Linux-container mode. "
                     + "Switch Docker Desktop to Linux containers and try again.");
         }
 
-        boolean dockerDesktop = operatingSystem != null && operatingSystem.contains("Docker Desktop");
-        if (dockerDesktop) {
-            // Docker Desktop's Linux VM socket; it accepts this path in bind mounts from Windows and macOS hosts.
-            return new Bind("/var/run/docker.sock", new Volume("/var/run/docker.sock"));
+        String source = properties.getDockerSocketPath();
+        if (source == null || source.isBlank()) {
+            source = DEFAULT_DOCKER_SOCKET_PATH;
         }
-
-        var socketPath = Path.of("/var/run/docker.sock");
-        if (Files.exists(socketPath)) {
-            return new Bind(socketPath.toString(), new Volume("/var/run/docker.sock"));
-        }
-
-        throw new IllegalStateException(
-                "No usable Docker socket found: the runner requires /var/run/docker.sock to be mountable. "
-                + "On Windows/macOS use Docker Desktop in Linux-container mode; on Linux run a standard Docker daemon. "
-                + "(daemon reported osType=" + osType + ", operatingSystem=" + operatingSystem
-                + ", dockerRootDir=" + dockerRootDir + ")");
+        return new Bind(source, new Volume(DEFAULT_DOCKER_SOCKET_PATH));
     }
 
     private int getAllocatedHostPort(String containerId, ExposedPort exposedPort) {

@@ -41,8 +41,9 @@ with the clone as its working directory. `GIT_REF` optionally selects a branch o
 shallow (`--depth 1`), and an existing clone in a mounted `/workspace` volume is updated with
 `git pull --ff-only` instead of being re-cloned. `GH_TOKEN` also authenticates the clone for
 private `https://github.com/` URLs. The repository URL must be in the form
-`https://github.com/<owner>/<repository>[.git]`; the runner verifies that the authenticated user
-owns the repository or has active membership in its owning organization before cloning.
+`https://github.com/<owner>/<repository>[.git]`; before cloning, the runner requires `GH_TOKEN` to
+resolve the repository through the GitHub API, which succeeds only for repositories the token is
+entitled to.
 
 The runner includes [Mise](https://mise.jdx.dev/) for repository-pinned developer tools. When the
 repository root contains `mise.toml`, `.mise/config.toml`, or `.tool-versions`, it runs

@@ -21,7 +21,7 @@ public class CopilotAgentHarnessFactory implements AgentHarnessFactory {
     }
 
     @Override
-    public AgentHarness connect(int hostPort) throws Exception {
+    public AgentHarness connect(int hostPort, Runnable stillStartable) throws Exception {
         int maxRetries = properties.getMaxRetries();
         long retryDelayMs = properties.getRetryDelayMs();
         int startTimeoutSeconds = properties.getStartTimeoutSeconds();
@@ -45,6 +45,7 @@ public class CopilotAgentHarnessFactory implements AgentHarnessFactory {
                 System.out.println("Copilot client connected on attempt " + attempt + " of " + maxRetries);
                 return new CopilotAgentHarness(client);
             } catch (Exception e) {
+                stillStartable.run();
                 if (i == maxRetries - 1) {
                     System.out.println("Copilot client failed after all " + maxRetries + " attempts");
                     throw e;

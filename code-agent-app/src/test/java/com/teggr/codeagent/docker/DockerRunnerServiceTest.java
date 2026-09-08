@@ -1,5 +1,8 @@
 package com.teggr.codeagent.docker;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -13,10 +16,19 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.async.ResultCallback;
+import com.github.dockerjava.api.command.InfoCmd;
+import com.github.dockerjava.api.command.InspectContainerCmd;
+import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.ListContainersCmd;
+import com.github.dockerjava.api.command.LogContainerCmd;
 import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.StopContainerCmd;
+import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.Frame;
+import com.github.dockerjava.api.model.Info;
+import com.github.dockerjava.api.model.StreamType;
 
 class DockerRunnerServiceTest {
 
@@ -57,6 +69,80 @@ class DockerRunnerServiceTest {
         service.pruneOrphans();
 
         verify(dockerClient, never()).stopContainerCmd(any());
+    }
+
+    @Test
+    void socketBindDefaultsToTheDockerCompatibilityPath() {
+        stubInfo("linux");
+
+        Bind bind = service.resolveDockerSocketBind();
+
+        assertThat(bind.getPath()).isEqualTo("/var/run/docker.sock");
+        assertThat(bind.getVolume().getPath()).isEqualTo("/var/run/docker.sock");
+    }
+
+    @Test
+    void socketBindHonoursTheConfiguredSourcePath() {
+        stubInfo("linux");
+        DockerRunnerProperties properties = new DockerRunnerProperties();
+        properties.setDockerSocketPath("/run/user/1000/podman/podman.sock");
+
+        Bind bind = new DockerRunnerService(dockerClient, properties).resolveDockerSocketBind();
+
+        assertThat(bind.getPath()).isEqualTo("/run/user/1000/podman/podman.sock");
+        assertThat(bind.getVolume().getPath()).isEqualTo("/var/run/docker.sock");
+    }
+
+    @Test
+    void socketBindRejectsWindowsContainerMode() {
+        stubInfo("windows");
+
+        assertThatThrownBy(service::resolveDockerSocketBind)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Linux-container mode");
+    }
+
+    @Test
+    void verifyRunningPassesWhileTheContainerIsUp() {
+        stubState(true, 0L);
+
+        service.verifyRunning("container-1");
+    }
+
+    @Test
+    void verifyRunningReportsTheExitCodeAndLogTailWhenTheContainerHasExited() throws Exception {
+        stubState(false, 1L);
+        LogContainerCmd logCmd = mock(LogContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
+        when(dockerClient.logContainerCmd("container-1")).thenReturn(logCmd);
+        when(logCmd.exec(any())).thenAnswer(invocation -> {
+            ResultCallback<Frame> callback = invocation.getArgument(0);
+            callback.onNext(new Frame(StreamType.STDERR, "ERROR: not authorised\n".getBytes(UTF_8)));
+            return callback;
+        });
+
+        assertThatThrownBy(() -> service.verifyRunning("container-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("exited with code 1")
+                .hasMessageContaining("ERROR: not authorised");
+    }
+
+    private void stubInfo(String osType) {
+        InfoCmd infoCmd = mock(InfoCmd.class);
+        Info info = mock(Info.class);
+        when(info.getOsType()).thenReturn(osType);
+        when(infoCmd.exec()).thenReturn(info);
+        when(dockerClient.infoCmd()).thenReturn(infoCmd);
+    }
+
+    private void stubState(boolean running, long exitCode) {
+        InspectContainerCmd inspectCmd = mock(InspectContainerCmd.class);
+        InspectContainerResponse response = mock(InspectContainerResponse.class);
+        InspectContainerResponse.ContainerState state = mock(InspectContainerResponse.ContainerState.class);
+        when(state.getRunning()).thenReturn(running);
+        when(state.getExitCodeLong()).thenReturn(exitCode);
+        when(response.getState()).thenReturn(state);
+        when(inspectCmd.exec()).thenReturn(response);
+        when(dockerClient.inspectContainerCmd("container-1")).thenReturn(inspectCmd);
     }
 
 }

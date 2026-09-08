@@ -8,6 +8,7 @@ public class DockerRunnerProperties {
     private String image = "teggr/code-agent-runner:0.1.0-SNAPSHOT";
     private String ghToken = "";
     private boolean pruneOrphansOnStartup = true;
+    private String dockerSocketPath = "";
 
     public String getImage() {
         return image;
@@ -31,6 +32,14 @@ public class DockerRunnerProperties {
 
     public void setPruneOrphansOnStartup(boolean pruneOrphansOnStartup) {
         this.pruneOrphansOnStartup = pruneOrphansOnStartup;
+    }
+
+    public String getDockerSocketPath() {
+        return dockerSocketPath;
+    }
+
+    public void setDockerSocketPath(String dockerSocketPath) {
+        this.dockerSocketPath = dockerSocketPath;
     }
 
 }

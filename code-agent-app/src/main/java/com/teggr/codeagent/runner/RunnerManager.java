@@ -70,7 +70,8 @@ public class RunnerManager {
 
         AgentHarness harness;
         try {
-            harness = agentHarnessFactory.connect(containerLaunch.hostPort());
+            harness = agentHarnessFactory.connect(containerLaunch.hostPort(),
+                    () -> dockerRunnerService.verifyRunning(containerLaunch.containerId()));
         } catch (Exception e) {
             dockerRunnerService.stop(containerLaunch.containerId());
             throw e;
@@ -102,7 +103,8 @@ public class RunnerManager {
                 ContainerLaunch containerLaunch = dockerRunnerService.launch(repoUrl);
                 System.out.println("[runner " + runnerId + "] Container " + containerLaunch.containerId()
                         + " on host port " + containerLaunch.hostPort() + "; connecting agent");
-                AgentHarness harness = agentHarnessFactory.connect(containerLaunch.hostPort());
+                AgentHarness harness = agentHarnessFactory.connect(containerLaunch.hostPort(),
+                        () -> dockerRunnerService.verifyRunning(containerLaunch.containerId()));
                 Runner startedRunner = new Runner(runnerId, repoUrl, containerLaunch, harness);
                 session.setRunner(startedRunner);
                 session.attachAgent(harness.createSession());

@@ -17,6 +17,7 @@
     <maven.compiler.release>25</maven.compiler.release>
     <spring-boot.version>4.1.1</spring-boot.version>
     <copilot-sdk-java.version>1.0.13-preview.1</copilot-sdk-java.version>
+    <docker-java.version>3.4.0</docker-java.version>
     <docker-maven-plugin.version>0.46.0</docker-maven-plugin.version>
     <!-- Copilot CLI release baked into the runner image: "latest" or a tag such as v0.0.369 -->
     <copilot-cli.version>latest</copilot-cli.version>
@@ -49,6 +50,17 @@
         <groupId>com.github</groupId>
         <artifactId>copilot-sdk-java</artifactId>
         <version>${copilot-sdk-java.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.github.docker-java</groupId>
+        <artifactId>docker-java-core</artifactId>
+        <version>${docker-java.version}</version>
+      </dependency>
+      <!-- Zerodep transport: the httpclient5 transport silently falls back to TCP with httpclient5 5.6.x. -->
+      <dependency>
+        <groupId>com.github.docker-java</groupId>
+        <artifactId>docker-java-transport-zerodep</artifactId>
+        <version>${docker-java.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

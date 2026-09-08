@@ -50,26 +50,12 @@ if [ -n "${GIT_REPO_URL:-}" ]; then
     REPO_NAME="${REPO_NAME%.git}"
     TARGET_DIR="${WORKSPACE_DIR}/${REPO_NAME}"
 
-    AUTHENTICATED_USER=$(github_api user | jq --raw-output '.login // empty') \
-        || fail "could not authenticate GH_TOKEN with the GitHub API"
-    [ -n "${AUTHENTICATED_USER}" ] || fail "GitHub API did not return an authenticated user"
-
+    # This lookup is the authorisation check: GitHub only returns the repository when GH_TOKEN is
+    # entitled to it, for every token type. Owner and org-membership checks add nothing on top and
+    # are impossible for fine-grained tokens, which cannot read /user/memberships/orgs.
     REPOSITORY=$(github_api "repos/${REPO_OWNER}/${REPO_NAME}") \
-        || fail "could not inspect repository ${REPO_OWNER}/${REPO_NAME}"
-    OWNER_TYPE=$(jq --raw-output '.owner.type // empty' <<<"${REPOSITORY}")
-    OWNER_LOGIN=$(jq --raw-output '.owner.login // empty' <<<"${REPOSITORY}")
-
-    if [ "${OWNER_TYPE}" = "User" ]; then
-        [ "${OWNER_LOGIN,,}" = "${AUTHENTICATED_USER,,}" ] \
-            || fail "repository ${REPO_OWNER}/${REPO_NAME} is not owned by ${AUTHENTICATED_USER}"
-    elif [ "${OWNER_TYPE}" = "Organization" ]; then
-        MEMBERSHIP=$(github_api "user/memberships/orgs/${OWNER_LOGIN}") \
-            || fail "could not inspect membership in organization ${OWNER_LOGIN}"
-        [ "$(jq --raw-output '.state // empty' <<<"${MEMBERSHIP}")" = "active" ] \
-            || fail "${AUTHENTICATED_USER} is not an active member of ${OWNER_LOGIN}"
-    else
-        fail "repository ${REPO_OWNER}/${REPO_NAME} has an unsupported owner type"
-    fi
+        || fail "GH_TOKEN cannot access repository ${REPO_OWNER}/${REPO_NAME}"
+    echo "Authorised for $(jq --raw-output '.full_name // empty' <<<"${REPOSITORY}")"
 
     # Authenticate https://github.com/ URLs with the injected token (private repos).
     git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"

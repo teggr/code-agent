@@ -1,6 +1,7 @@
 package com.teggr.codeagent.runner;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -32,7 +33,7 @@ class RunnerManagerTest {
             .thenReturn(new ContainerLaunch("container-2", 2222));
         AgentHarness harness = mock(AgentHarness.class);
         when(harness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt())).thenReturn(harness);
+        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
 
         Runner first = runnerManager.start(repoUrl);
         Runner second = runnerManager.start(repoUrl);
@@ -51,7 +52,7 @@ class RunnerManagerTest {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(repoUrl)).thenReturn(new ContainerLaunch("container-1", 1111));
         when(harness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt())).thenReturn(harness);
+        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
 
         RunnerSession session = runnerManager.start(repoUrl, prompt);
 
@@ -65,7 +66,7 @@ class RunnerManagerTest {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
         when(harness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt())).thenReturn(harness);
+        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
 
         Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
         runnerManager.stop(runner.id());
@@ -85,7 +86,7 @@ class RunnerManagerTest {
         when(dockerRunnerService.launch(anyString()))
             .thenReturn(new ContainerLaunch("container-1", 1111))
             .thenReturn(new ContainerLaunch("container-2", 2222));
-        when(agentHarnessFactory.connect(anyInt())).thenReturn(failingHarness).thenReturn(healthyHarness);
+        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(failingHarness).thenReturn(healthyHarness);
 
         runnerManager.start("https://github.com/teggr/j2html-toolkit");
         runnerManager.start("https://github.com/teggr/j2html-toolkit");
@@ -100,7 +101,7 @@ class RunnerManagerTest {
     @Test
     void startStopsContainerWhenHarnessConnectFails() throws Exception {
         when(dockerRunnerService.launch(anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
-        when(agentHarnessFactory.connect(anyInt())).thenThrow(new RuntimeException("connect failed"));
+        when(agentHarnessFactory.connect(anyInt(), any())).thenThrow(new RuntimeException("connect failed"));
 
         try {
             runnerManager.start("https://github.com/teggr/j2html-toolkit");

@@ -3,6 +3,8 @@ package com.teggr.codeagent;
 import java.awt.Desktop;
 import java.net.URI;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -16,6 +18,8 @@ import com.teggr.codeagent.docker.DockerRunnerService;
 @SpringBootApplication
 @ConfigurationPropertiesScan
 public class CodeAgentApplication {
+
+    private static final Logger log = LoggerFactory.getLogger(CodeAgentApplication.class);
 
     public static void main(String[] args) {
         SpringApplication.run(CodeAgentApplication.class, args);
@@ -44,7 +48,7 @@ public class CodeAgentApplication {
             try {
                 dockerRunnerService.pruneOrphans();
             } catch (Exception e) {
-                System.err.println("Unable to prune orphaned runner containers: " + e.getMessage());
+                log.warn("Unable to prune orphaned runner containers", e);
             }
         };
     }

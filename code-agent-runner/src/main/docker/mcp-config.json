@@ -4,7 +4,6 @@
       "command": "npx",
       "args": [
         "@playwright/mcp",
-        "--executable-path", "/opt/google/chrome/chrome",
         "--headless",
         "--no-sandbox",
         "--isolated"

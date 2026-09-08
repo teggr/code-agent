@@ -38,15 +38,6 @@ RUN if [ "$COPILOT_CLI_VERSION" = "latest" ]; then \
     fi \
     && copilot --version
 
-# System Google Chrome, used by Playwright MCP instead of a Playwright-managed browser download.
-RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
-        > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/* \
-    && google-chrome --version
-
 # Node.js is a prerequisite for the Copilot CLI's own npm install path and for Playwright/npx.
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
@@ -57,7 +48,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # images and run services against the host daemon, which is reached via a bind-mounted
 # /var/run/docker.sock supplied at container launch.
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" \
         > /etc/apt/sources.list.d/docker.list \
     && apt-get update \
     && if [ "$DOCKER_CLI_VERSION" = "latest" ]; then \
@@ -86,18 +77,28 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && gh --version
 
 # VS Code standalone CLI so developers can attach via VS Code Tunnels or manage the container.
-RUN if [ "$VSCODE_CLI_VERSION" = "latest" ]; then \
-        curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" \
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) vscode_cli_arch=cli-alpine-x64 ;; \
+        arm64) vscode_cli_arch=cli-alpine-arm64 ;; \
+        *) echo "Unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && if [ "$VSCODE_CLI_VERSION" = "latest" ]; then \
+        curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=${vscode_cli_arch}" \
             | tar -xz -C /usr/local/bin; \
     else \
-        curl -fsSL "https://update.code.visualstudio.com/commit:${VSCODE_CLI_VERSION}/cli-alpine-x64/stable" \
+        curl -fsSL "https://update.code.visualstudio.com/commit:${VSCODE_CLI_VERSION}/${vscode_cli_arch}/stable" \
             | tar -xz -C /usr/local/bin; \
     fi \
     && code --version
 
-RUN if [ "$VSCODE_SERVER_COMMIT" = "latest" ]; then \
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) vscode_server_arch=server-linux-x64 ;; \
+        arm64) vscode_server_arch=server-linux-arm64 ;; \
+        *) echo "Unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && if [ "$VSCODE_SERVER_COMMIT" = "latest" ]; then \
         server_dir="$(mktemp -d)" \
-    && curl -fsSL "https://update.code.visualstudio.com/latest/server-linux-x64/stable" \
+    && curl -fsSL "https://update.code.visualstudio.com/latest/${vscode_server_arch}/stable" \
             | tar -xz --strip-components=1 -C "$server_dir" \
         && resolved_commit="$(jq -r .commit "$server_dir/product.json")" \
         && mkdir -p "/root/.vscode-server/bin/${resolved_commit}" \
@@ -105,28 +106,36 @@ RUN if [ "$VSCODE_SERVER_COMMIT" = "latest" ]; then \
         && rmdir "$server_dir"; \
     elif [ "$VSCODE_SERVER_COMMIT" != "none" ]; then \
         mkdir -p "/root/.vscode-server/bin/${VSCODE_SERVER_COMMIT}" \
-        && curl -fsSL "https://update.code.visualstudio.com/commit:${VSCODE_SERVER_COMMIT}/server-linux-x64/stable" \
+        && curl -fsSL "https://update.code.visualstudio.com/commit:${VSCODE_SERVER_COMMIT}/${vscode_server_arch}/stable" \
             | tar -xz --strip-components=1 -C "/root/.vscode-server/bin/${VSCODE_SERVER_COMMIT}"; \
     fi
 
-# Pre-installed globally so `npx` resolves them without a network call at container start,
-# and configured to skip Playwright's own browser download since system Chrome is used instead.
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# Pre-installed globally so `npx` resolves them without a network call at container start.
+# Browsers land in a shared location so the non-root `agent` user (below) can use them.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
 RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \
-    && npx playwright --version
+    && npx playwright --version \
+    && npx playwright install --with-deps chromium \
+    && chromium_bin="$(find "$PLAYWRIGHT_BROWSERS_PATH" -maxdepth 3 -type f -name chrome -path '*chrome-linux*')" \
+    && "$chromium_bin" --version
 
 RUN useradd --create-home --uid 1001 agent \
     && mkdir -p /workspace \
     && mkdir -p /mise/config /mise/data /mise/cache /mise/state \
-    && chown agent:agent /workspace /mise
+    && chown -R agent:agent /workspace /mise /opt/playwright-browsers
 
 ENV XDG_STATE_HOME=/mise/state \
     MISE_CONFIG_DIR=/mise/config \
     MISE_DATA_DIR=/mise/data \
     MISE_CACHE_DIR=/mise/cache
 
-RUN curl -fsSL "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-x64.tar.gz" \
-    | tar -xz --strip-components=2 -C /usr/local/bin mise/bin/mise \
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) mise_arch=linux-x64 ;; \
+        arm64) mise_arch=linux-arm64 ;; \
+        *) echo "Unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-${mise_arch}.tar.gz" \
+        | tar -xz --strip-components=2 -C /usr/local/bin mise/bin/mise \
     && mise --version
 
 # Clones GIT_REPO_URL (if set) into /workspace and cd's into it before starting the CLI,

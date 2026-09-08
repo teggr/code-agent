@@ -17,15 +17,19 @@ import org.junit.jupiter.api.Test;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
+import com.github.dockerjava.api.command.CreateContainerCmd;
+import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.InfoCmd;
 import com.github.dockerjava.api.command.InspectContainerCmd;
 import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.command.LogContainerCmd;
 import com.github.dockerjava.api.command.RemoveContainerCmd;
+import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.command.StopContainerCmd;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.Info;
 import com.github.dockerjava.api.model.StreamType;
@@ -43,14 +47,39 @@ class DockerRunnerServiceTest {
     }
 
     @Test
-    void launchRejectsMissingCopilotToken() {
+    void launchDefaultsCopilotTokenToGitTokenWhenNotConfigured() throws Exception {
         DockerRunnerProperties properties = new DockerRunnerProperties();
         properties.setGitToken("git-token");
         DockerRunnerService runnerService = new DockerRunnerService(dockerClient, properties);
 
-        assertThatThrownBy(() -> runnerService.launch("https://github.com/fanduel/withdrawals"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessage("COPILOT_GITHUB_TOKEN environment variable is not set");
+        stubInfo("linux");
+
+        CreateContainerCmd createContainerCmd = mock(CreateContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
+        CreateContainerResponse createContainerResponse = mock(CreateContainerResponse.class);
+        when(createContainerResponse.getId()).thenReturn("container-1");
+        when(createContainerCmd.exec()).thenReturn(createContainerResponse);
+        when(dockerClient.createContainerCmd(any())).thenReturn(createContainerCmd);
+
+        StartContainerCmd startContainerCmd = mock(StartContainerCmd.class);
+        when(dockerClient.startContainerCmd("container-1")).thenReturn(startContainerCmd);
+
+        InspectContainerCmd inspectCmd = mock(InspectContainerCmd.class);
+        InspectContainerResponse inspectResponse = mock(InspectContainerResponse.class);
+        com.github.dockerjava.api.model.NetworkSettings networkSettings = mock(com.github.dockerjava.api.model.NetworkSettings.class);
+        com.github.dockerjava.api.model.Ports ports = mock(com.github.dockerjava.api.model.Ports.class);
+        com.github.dockerjava.api.model.Ports.Binding binding = mock(com.github.dockerjava.api.model.Ports.Binding.class);
+        when(binding.getHostPortSpec()).thenReturn("4321");
+        when(ports.getBindings()).thenReturn(Map.of(ExposedPort.tcp(4321), new com.github.dockerjava.api.model.Ports.Binding[] {binding}));
+        when(networkSettings.getPorts()).thenReturn(ports);
+        when(inspectResponse.getNetworkSettings()).thenReturn(networkSettings);
+        when(inspectCmd.exec()).thenReturn(inspectResponse);
+        when(dockerClient.inspectContainerCmd("container-1")).thenReturn(inspectCmd);
+
+        runnerService.launch("https://github.com/fanduel/withdrawals");
+
+        verify(createContainerCmd).withEnv("GH_TOKEN=git-token",
+                "COPILOT_GITHUB_TOKEN=git-token",
+                "GIT_REPO_URL=https://github.com/fanduel/withdrawals");
     }
 
     @Test

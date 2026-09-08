@@ -50,8 +50,9 @@ public class DockerRunnerService {
         if (gitToken == null || gitToken.isEmpty()) {
             throw new IllegalStateException("GH_TOKEN environment variable is not set");
         }
+        // Copilot token is an override; fall back to the git token by default.
         if (copilotToken == null || copilotToken.isEmpty()) {
-            throw new IllegalStateException("COPILOT_GITHUB_TOKEN environment variable is not set");
+            copilotToken = gitToken;
         }
 
         try {

@@ -10,9 +10,14 @@ public record ContainerLaunch(
         String devContainerCliCommand) {
 
     public ContainerLaunch(String containerId, int hostPort) {
+        this(containerId, hostPort, "/workspace");
+    }
+
+    /** workspacePath should be the cloned repository's directory, e.g. "/workspace/my-repo". */
+    public ContainerLaunch(String containerId, int hostPort, String workspacePath) {
         this(containerId, hostPort,
-                buildDevContainerUri(containerId, "/workspace"),
-                buildDevContainerCliCommand(containerId, "/workspace"));
+                buildDevContainerUri(containerId, workspacePath),
+                buildDevContainerCliCommand(containerId, workspacePath));
     }
 
     private static String shortContainerId(String containerId) {

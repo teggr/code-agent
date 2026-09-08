@@ -34,4 +34,11 @@ public class FragmentRenderer {
         return templateEngine.process("fragments", Set.of("runnerList"), context);
     }
 
+    public String vscodeLink(String devContainerUri, boolean ready) {
+        Context context = new Context();
+        context.setVariable("devContainerUri", devContainerUri);
+        context.setVariable("ready", ready);
+        return templateEngine.process("fragments", Set.of("vscodeLink"), context);
+    }
+
 }

@@ -12,6 +12,7 @@
     .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
     .row textarea { flex: 1; padding: 10px 12px; border: 2px solid #2a2a2a; border-radius: 8px; font-size: 14px; }
     .button { background: white; color: #111; border: 2px solid #333; border-radius: 8px; padding: 8px 12px; cursor: pointer; text-decoration: none; }
+    .button.disabled { opacity: .5; pointer-events: none; cursor: default; }
     .top-nav { margin-bottom: 16px; }
     .meta { color: #555; font-size: 13px; }
     .messages { border: 2px solid #333; border-radius: 10px; padding: 12px; background: white; }
@@ -24,7 +25,10 @@
   <div class="shell" hx-ext="sse" th:attr="sse-connect=|/runners/${runnerId}/events|">
     <nav class="top-nav">
       <a class="button" href="/">Back to dashboard</a>
-      <a class="button" th:href="${devContainerUri}">VS Code</a>
+      <a class="button" id="vscode-link" sse-swap="vscode" hx-swap="outerHTML"
+         th:classappend="${vscodeReady} ? '' : ' disabled'"
+         th:href="${vscodeReady} ? ${devContainerUri} : '#'"
+         th:text="${vscodeReady} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
     </nav>
     <div class="panel">
       <div class="row"><h2>Runner: <span th:text="${runnerId}">runner-id</span></h2></div>

@@ -107,6 +107,7 @@ public class RunnerManager {
                         () -> dockerRunnerService.verifyRunning(containerLaunch.containerId()));
                 Runner startedRunner = new Runner(runnerId, repoUrl, containerLaunch, harness);
                 session.setRunner(startedRunner);
+                eventPublisher.publishVscodeLink(session);
                 session.attachAgent(harness.createSession());
                 System.out.println("[runner " + runnerId + "] Session created; sending prompt");
                 session.setStatus(RunnerStatus.BUSY);

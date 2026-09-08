@@ -55,6 +55,12 @@ public class RunnerEventPublisher {
         publishRunnerList();
     }
 
+    /** Pushes the real devContainerUri once the placeholder "pending" container has been replaced. */
+    public void publishVscodeLink(RunnerSession session) {
+        String devContainerUri = session.runner().containerLaunch().devContainerUri();
+        sendAll(perRunner.get(session.runner().id()), "vscode", fragments.vscodeLink(devContainerUri, session.isReady()));
+    }
+
     public void publishRunnerList() {
         Supplier<List<RunnerSession>> supplier = dashboardSessions;
         if (supplier != null) {

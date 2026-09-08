@@ -3,6 +3,8 @@ package com.teggr.codeagent.docker;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.stereotype.Service;
@@ -27,6 +29,10 @@ public class DockerRunnerService {
     private static final String DEFAULT_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
     private static final int LOG_TAIL_LINES = 25;
     private static final int LOG_TAIL_TIMEOUT_SECONDS = 5;
+
+    /** Mirrors entrypoint.sh's GIT_REPO_URL validation so the derived clone directory name matches. */
+    private static final Pattern GIT_REPO_URL_PATTERN =
+            Pattern.compile("^https://github\\.com/[A-Za-z0-9][A-Za-z0-9-]*/([A-Za-z0-9._-]+?)(?:\\.git)?$");
 
     private final DockerClient dockerClient;
     private final DockerRunnerProperties properties;
@@ -69,7 +75,8 @@ public class DockerRunnerService {
 
             dockerClient.startContainerCmd(containerId).exec();
 
-            ContainerLaunch launch = new ContainerLaunch(containerId, getAllocatedHostPort(containerId, exposedPort));
+            ContainerLaunch launch = new ContainerLaunch(containerId,
+                    getAllocatedHostPort(containerId, exposedPort), workspacePath(gitRepoUrl));
             System.out.println("Container started with ID: " + launch.containerId()
                     + " on host port " + launch.hostPort());
             System.out.println("Open workspace in VS Code (attached container):");
@@ -86,6 +93,15 @@ public class DockerRunnerService {
             }
             throw e;
         }
+    }
+
+    /** Derives the cloned repository's directory (see entrypoint.sh), falling back to /workspace if unparseable. */
+    private static String workspacePath(String gitRepoUrl) {
+        Matcher matcher = GIT_REPO_URL_PATTERN.matcher(gitRepoUrl);
+        if (!matcher.matches()) {
+            return "/workspace";
+        }
+        return "/workspace/" + matcher.group(1);
     }
 
     public void stop(String containerId) {

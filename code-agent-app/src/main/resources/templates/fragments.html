@@ -12,6 +12,13 @@
        sse-swap so the replacement element keeps its event binding after each swap. -->
   <span th:fragment="statusBadge(status)" class="status" id="runner-status" sse-swap="status" hx-swap="outerHTML" th:text="${status}">IDLE</span>
 
+  <!-- VS Code link; disabled until the real container is up, since the placeholder devContainerUri
+       points at a nonexistent "pending" container. outerHTML-swapped once the container is ready. -->
+  <a th:fragment="vscodeLink(devContainerUri, ready)" id="vscode-link" sse-swap="vscode" hx-swap="outerHTML"
+     class="button" th:classappend="${ready} ? '' : ' disabled'"
+     th:href="${ready} ? ${devContainerUri} : '#'"
+     th:text="${ready} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
+
   <!-- Whole runner list; innerHTML-swapped on the dashboard on any runner change. -->
   <th:block th:fragment="runnerList(runners)">
     <div th:if="${#lists.isEmpty(runners)}">
@@ -27,7 +34,9 @@
         <div class="row">
           <span class="status" th:text="${runnerSession.status}">IDLE</span>
           <a class="button" th:href="|/runners/${runnerSession.runner.id}|">Open</a>
-          <a class="button" th:href="${runnerSession.runner.containerLaunch.devContainerUri}">VS Code</a>
+          <a class="button" th:classappend="${runnerSession.ready} ? '' : ' disabled'"
+             th:href="${runnerSession.ready} ? ${runnerSession.runner.containerLaunch.devContainerUri} : '#'"
+             th:text="${runnerSession.ready} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
         </div>
       </div>
     </div>

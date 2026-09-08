@@ -48,6 +48,11 @@ public class RunnerSession {
         this.runner = runner;
     }
 
+    /** False until the real container/agent has connected; the placeholder devContainerUri points nowhere until then. */
+    public boolean isReady() {
+        return runner.harness() != null;
+    }
+
     public RunnerStatus status() {
         return status.get();
     }

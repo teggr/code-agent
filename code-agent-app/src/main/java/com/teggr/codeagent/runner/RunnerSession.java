@@ -2,11 +2,15 @@ package com.teggr.codeagent.runner;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.teggr.codeagent.agent.AgentSession;
+import com.teggr.codeagent.agent.Question;
 
 public class RunnerSession {
 
@@ -15,6 +19,8 @@ public class RunnerSession {
     private final AtomicReference<RunnerStatus> status = new AtomicReference<>(RunnerStatus.STARTING);
     private volatile AgentSession agentSession;
     private volatile RunnerSessionListener listener;
+    private final Map<String, CompletableFuture<String>> pendingQuestions = new ConcurrentHashMap<>();
+    private volatile Question pendingQuestion;
 
     public RunnerSession(Runner runner) {
         this.runner = runner;
@@ -38,11 +44,44 @@ public class RunnerSession {
             setStatus(RunnerStatus.FAILED);
             addMessage("assistant", "Copilot error: " + error);
         });
+        agentSession.onToolActivity(activity -> addMessage("tool", activity.summary()));
+        agentSession.onEvent(event -> addMessage("system", event.summary()));
+        agentSession.onQuestion(question -> {
+            CompletableFuture<String> future = new CompletableFuture<>();
+            pendingQuestions.put(question.id(), future);
+            pendingQuestion = question;
+            addMessage("question", question.prompt());
+            RunnerSessionListener current = listener;
+            if (current != null) {
+                current.onQuestionChange(this, question);
+            }
+            return future;
+        });
+    }
+
+    /** Completes a pending agent question with the user's answer; no-op if the question is unknown or already answered. */
+    public void answerQuestion(String questionId, String answer) {
+        CompletableFuture<String> future = pendingQuestions.remove(questionId);
+        if (future == null) {
+            return;
+        }
+        pendingQuestion = null;
+        addMessage("user", answer);
+        RunnerSessionListener current = listener;
+        if (current != null) {
+            current.onQuestionChange(this, null);
+        }
+        future.complete(answer);
+    }
+
+    public Question pendingQuestion() {
+        return pendingQuestion;
     }
 
     public Runner runner() {
         return runner;
     }
+
 
     public void setRunner(Runner runner) {
         this.runner = runner;

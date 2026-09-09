@@ -56,6 +56,7 @@ public class RunnerWebController {
         view.addObject("messages", session.messages());
         view.addObject("devContainerUri", session.runner().containerLaunch().devContainerUri());
         view.addObject("vscodeReady", session.isReady());
+        view.addObject("pendingQuestion", session.pendingQuestion());
         return view;
     }
 
@@ -76,6 +77,29 @@ public class RunnerWebController {
                 session.addMessage("assistant", "Error: " + e.getMessage());
             }
         });
+        return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
+    }
+
+    @PostMapping("/runners/{runnerId}/answer")
+    public ResponseEntity<Void> answerQuestion(@PathVariable("runnerId") String runnerId,
+            @RequestParam("questionId") String questionId, @RequestParam("answer") String answer) {
+        RunnerSession session = runnerManager.getSession(runnerId);
+        if (session == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
+        }
+        session.answerQuestion(questionId, answer);
+        return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
+    }
+
+    @PostMapping("/runners/{runnerId}/abort")
+    public ResponseEntity<Void> abort(@PathVariable("runnerId") String runnerId) throws Exception {
+        RunnerSession session = runnerManager.getSession(runnerId);
+        if (session == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
+        }
+        if (session.agentSession() != null) {
+            session.agentSession().abort();
+        }
         return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
     }
 

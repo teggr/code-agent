@@ -54,6 +54,11 @@ public class RunnerManager {
             public void onStatusChange(RunnerSession s, RunnerStatus status) {
                 eventPublisher.publishStatus(s, status);
             }
+
+            @Override
+            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.agent.Question question) {
+                eventPublisher.publishQuestion(s, question);
+            }
         });
     }
 

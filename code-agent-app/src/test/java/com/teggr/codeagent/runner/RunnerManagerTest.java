@@ -82,6 +82,30 @@ class RunnerManagerTest {
     }
 
     @Test
+    void answeringAQuestionCompletesTheAgentsPendingFutureAndRecordsBothMessages() {
+        AgentSession agentSession = mock(AgentSession.class);
+        ArgumentCaptor<java.util.function.Function<com.teggr.codeagent.agent.Question, java.util.concurrent.CompletableFuture<String>>> questionHandlerCaptor =
+                ArgumentCaptor.forClass(java.util.function.Function.class);
+
+        RunnerSession session = new RunnerSession(new Runner("runner-1", "repo", new ContainerLaunch("container-1", 1111), null));
+        session.attachAgent(agentSession);
+        verify(agentSession).onQuestion(questionHandlerCaptor.capture());
+
+        com.teggr.codeagent.agent.Question question = new com.teggr.codeagent.agent.Question("question-1",
+                "Which environment?", java.util.List.of("dev", "prod"));
+        java.util.concurrent.CompletableFuture<String> answerFuture = questionHandlerCaptor.getValue().apply(question);
+
+        assertThat(session.pendingQuestion()).isEqualTo(question);
+        assertThat(session.messages()).extracting("content").contains("Which environment?");
+
+        session.answerQuestion("question-1", "prod");
+
+        assertThat(answerFuture).isCompletedWithValue("prod");
+        assertThat(session.pendingQuestion()).isNull();
+        assertThat(session.messages()).extracting("content").contains("prod");
+    }
+
+    @Test
     void stopClosesHarnessAndContainerAndRemovesRunner() throws Exception {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(anyString())).thenReturn(new ContainerLaunch("container-1", 1111));

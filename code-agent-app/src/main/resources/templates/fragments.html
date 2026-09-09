@@ -3,7 +3,7 @@
 <body>
 
   <!-- One chat message; appended via hx-swap="beforeend" on the runner page. -->
-  <div th:fragment="message(message)" class="msg">
+  <div th:fragment="message(message)" class="msg" th:classappend="'msg-' + ${message.role}">
     <span class="role" th:text="${message.role}">user</span>
     <span th:text="${message.content}">content</span>
   </div>
@@ -11,6 +11,31 @@
   <!-- Status badge; outerHTML-swapped in place on the runner page. Must re-declare
        sse-swap so the replacement element keeps its event binding after each swap. -->
   <span th:fragment="statusBadge(status)" class="status" id="runner-status" sse-swap="status" hx-swap="outerHTML" th:text="${status}">IDLE</span>
+
+  <!-- The agent's pending question, if any; outerHTML-swapped so it appears/clears live.
+       Must re-declare sse-swap on every render, including the empty state, so it keeps listening. -->
+  <div th:fragment="pendingQuestion(runnerId, question)" id="pending-question" sse-swap="question" hx-swap="outerHTML">
+    <div class="panel" th:if="${question != null}">
+      <div class="row"><strong>Agent is asking:</strong></div>
+      <div class="row" th:text="${question.prompt}">question</div>
+      <form th:if="${question.choices != null and !#lists.isEmpty(question.choices)}"
+            method="post" th:action="|/runners/${runnerId}/answer|">
+        <input type="hidden" name="questionId" th:value="${question.id}"/>
+        <div class="row">
+          <button class="button" type="submit" name="answer" th:each="choice : ${question.choices}"
+                  th:value="${choice}" th:text="${choice}">choice</button>
+        </div>
+      </form>
+      <form th:unless="${question.choices != null and !#lists.isEmpty(question.choices)}"
+            method="post" th:action="|/runners/${runnerId}/answer|">
+        <input type="hidden" name="questionId" th:value="${question.id}"/>
+        <div class="row">
+          <input type="text" name="answer" placeholder="Your answer"/>
+          <button class="button" type="submit">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- VS Code link; disabled until the real container is up, since the placeholder devContainerUri
        points at a nonexistent "pending" container. outerHTML-swapped once the container is ready. -->

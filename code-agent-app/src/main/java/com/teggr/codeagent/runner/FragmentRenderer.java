@@ -28,6 +28,13 @@ public class FragmentRenderer {
         return templateEngine.process("fragments", Set.of("statusBadge"), context);
     }
 
+    public String pendingQuestion(String runnerId, com.teggr.codeagent.agent.Question question) {
+        Context context = new Context();
+        context.setVariable("runnerId", runnerId);
+        context.setVariable("question", question);
+        return templateEngine.process("fragments", Set.of("pendingQuestion"), context);
+    }
+
     public String runnerList(Iterable<? extends RunnerSession> sessions) {
         Context context = new Context();
         context.setVariable("runners", sessions);

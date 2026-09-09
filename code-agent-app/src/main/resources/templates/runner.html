@@ -19,6 +19,9 @@
     .msg { padding: 8px 0; border-bottom: 1px solid #d0d0d0; white-space: pre-wrap; }
     .msg:last-child { border-bottom: none; }
     .role { font-weight: bold; display: inline-block; width: 80px; }
+    .msg-tool, .msg-system { color: #666; font-style: italic; }
+    .msg-question { color: #7a4d00; font-weight: bold; }
+    #stop-button.disabled { opacity: .5; pointer-events: none; cursor: default; }
   </style>
 </head>
 <body>
@@ -38,10 +41,33 @@
 
     <div class="panel">
       <div class="messages" id="messages" sse-swap="message" hx-swap="beforeend">
-        <div class="msg" th:each="message : ${messages}">
+        <div class="msg" th:each="message : ${messages}" th:classappend="'msg-' + ${message.role}">
           <span class="role" th:text="${message.role}">user</span>
           <span th:text="${message.content}">content</span>
         </div>
+      </div>
+    </div>
+
+    <div id="pending-question" sse-swap="question" hx-swap="outerHTML">
+      <div class="panel" th:if="${pendingQuestion != null}">
+        <div class="row"><strong>Agent is asking:</strong></div>
+        <div class="row" th:text="${pendingQuestion.prompt}">question</div>
+        <form th:if="${pendingQuestion.choices != null and !#lists.isEmpty(pendingQuestion.choices)}"
+              method="post" th:action="|/runners/${runnerId}/answer|">
+          <input type="hidden" name="questionId" th:value="${pendingQuestion.id}"/>
+          <div class="row">
+            <button class="button" type="submit" name="answer" th:each="choice : ${pendingQuestion.choices}"
+                    th:value="${choice}" th:text="${choice}">choice</button>
+          </div>
+        </form>
+        <form th:unless="${pendingQuestion.choices != null and !#lists.isEmpty(pendingQuestion.choices)}"
+              method="post" th:action="|/runners/${runnerId}/answer|">
+          <input type="hidden" name="questionId" th:value="${pendingQuestion.id}"/>
+          <div class="row">
+            <input type="text" name="answer" placeholder="Your answer"/>
+            <button class="button" type="submit">Send</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -52,6 +78,9 @@
         </div>
         <div class="row">
           <button class="button" type="submit">Send message</button>
+          <button class="button" id="stop-button" type="submit" formmethod="post"
+                  th:formaction="|/runners/${runnerId}/abort|"
+                  th:classappend="${status.name() == 'BUSY'} ? '' : ' disabled'">Stop</button>
         </div>
       </form>
     </div>

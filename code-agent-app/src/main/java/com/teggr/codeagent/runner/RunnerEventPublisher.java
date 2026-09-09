@@ -55,6 +55,10 @@ public class RunnerEventPublisher {
         publishRunnerList();
     }
 
+    public void publishQuestion(RunnerSession session, com.teggr.codeagent.agent.Question question) {
+        sendAll(perRunner.get(session.runner().id()), "question", fragments.pendingQuestion(session.runner().id(), question));
+    }
+
     /** Pushes the real devContainerUri once the placeholder "pending" container has been replaced. */
     public void publishVscodeLink(RunnerSession session) {
         String devContainerUri = session.runner().containerLaunch().devContainerUri();

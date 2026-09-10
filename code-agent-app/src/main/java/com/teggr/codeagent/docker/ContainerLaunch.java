@@ -6,6 +6,7 @@ import java.util.HexFormat;
 public record ContainerLaunch(
         String containerId,
         int hostPort,
+        String workspacePath,
         String devContainerUri,
         String devContainerCliCommand) {
 
@@ -15,7 +16,7 @@ public record ContainerLaunch(
 
     /** workspacePath should be the cloned repository's directory, e.g. "/workspace/my-repo". */
     public ContainerLaunch(String containerId, int hostPort, String workspacePath) {
-        this(containerId, hostPort,
+        this(containerId, hostPort, workspacePath,
                 buildDevContainerUri(containerId, workspacePath),
                 buildDevContainerCliCommand(containerId, workspacePath));
     }

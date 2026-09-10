@@ -59,6 +59,16 @@ public class RunnerSession {
         });
     }
 
+    /** Drops the agent session and anything waiting on it, leaving the runner's message history intact. */
+    public void detachAgent() {
+        this.agentSession = null;
+        this.pendingQuestion = null;
+        pendingQuestions.values().forEach(future -> future.complete(""));
+        pendingQuestions.clear();
+        Runner current = runner;
+        this.runner = new Runner(current.id(), current.repoUrl(), current.containerLaunch(), null);
+    }
+
     /** Completes a pending agent question with the user's answer; no-op if the question is unknown or already answered. */
     public void answerQuestion(String questionId, String answer) {
         CompletableFuture<String> future = pendingQuestions.remove(questionId);

@@ -13,7 +13,7 @@ import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 
 import com.teggr.codeagent.docker.DockerRunnerProperties;
-import com.teggr.codeagent.docker.DockerRunnerService;
+import com.teggr.codeagent.runner.RunnerManager;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
@@ -39,16 +39,16 @@ public class CodeAgentApplication {
     }
 
     @Bean
-    public ApplicationListener<ApplicationReadyEvent> orphanRunnerCleanup(
-            DockerRunnerService dockerRunnerService, DockerRunnerProperties properties) {
+    public ApplicationListener<ApplicationReadyEvent> existingRunnerAdoption(
+            RunnerManager runnerManager, DockerRunnerProperties properties) {
         return event -> {
-            if (!properties.isPruneOrphansOnStartup()) {
+            if (!properties.isAdoptExistingOnStartup()) {
                 return;
             }
             try {
-                dockerRunnerService.pruneOrphans();
+                runnerManager.adoptExisting();
             } catch (Exception e) {
-                log.warn("Unable to prune orphaned runner containers", e);
+                log.warn("Unable to adopt runner containers left by a previous run", e);
             }
         };
     }

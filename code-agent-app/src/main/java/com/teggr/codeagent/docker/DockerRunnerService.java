@@ -1,6 +1,8 @@
 package com.teggr.codeagent.docker;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ExposedPort;
@@ -23,9 +26,16 @@ import com.github.dockerjava.api.model.Volume;
 @Service
 public class DockerRunnerService {
 
-    /** Label applied to every runner container so orphans from a previous, uncleanly-stopped run can be found. */
+    /** Label applied to every runner container so a restarted application can find and adopt it. */
     static final String MANAGED_LABEL = "codeagent.managed";
 
+    /** Runner identity carried by the container itself, so runner ids survive an application restart. */
+    static final String RUNNER_ID_LABEL = "codeagent.runner.id";
+    static final String REPO_URL_LABEL = "codeagent.repo.url";
+    static final String WORKSPACE_PATH_LABEL = "codeagent.workspace.path";
+    static final String CREATED_AT_LABEL = "codeagent.created-at";
+
+    private static final int AGENT_PORT = 4321;
     private static final String DEFAULT_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
     private static final int LOG_TAIL_LINES = 25;
     private static final int LOG_TAIL_TIMEOUT_SECONDS = 5;
@@ -42,7 +52,7 @@ public class DockerRunnerService {
         this.properties = properties;
     }
 
-    public ContainerLaunch launch(String gitRepoUrl) throws Exception {
+    public ContainerLaunch launch(String gitRepoUrl, String runnerId) throws Exception {
         String image = properties.getImage();
         String gitToken = properties.getGitToken();
         String copilotToken = properties.getCopilotToken();
@@ -56,9 +66,11 @@ public class DockerRunnerService {
         }
 
         try {
-            ExposedPort exposedPort = ExposedPort.tcp(4321);
+            ExposedPort exposedPort = ExposedPort.tcp(AGENT_PORT);
             Bind dockerSocketBind = resolveDockerSocketBind();
             System.out.println("Mounting Docker socket into runner: " + dockerSocketBind);
+
+            String workspacePath = workspacePath(gitRepoUrl);
 
             CreateContainerResponse container = dockerClient.createContainerCmd(image)
                 .withExposedPorts(exposedPort)
@@ -66,7 +78,11 @@ public class DockerRunnerService {
                     .withPublishAllPorts(true)
                     .withBinds(dockerSocketBind)
                 )
-                .withLabels(Map.of(MANAGED_LABEL, "true"))
+                .withLabels(Map.of(MANAGED_LABEL, "true",
+                    RUNNER_ID_LABEL, runnerId,
+                    REPO_URL_LABEL, gitRepoUrl,
+                    WORKSPACE_PATH_LABEL, workspacePath,
+                    CREATED_AT_LABEL, Instant.now().toString()))
                 .withEnv("GH_TOKEN=" + gitToken,
                     "COPILOT_GITHUB_TOKEN=" + copilotToken,
                     "GIT_REPO_URL=" + gitRepoUrl)
@@ -77,7 +93,7 @@ public class DockerRunnerService {
             dockerClient.startContainerCmd(containerId).exec();
 
             ContainerLaunch launch = new ContainerLaunch(containerId,
-                    getAllocatedHostPort(containerId, exposedPort), workspacePath(gitRepoUrl));
+                    getAllocatedHostPort(containerId, exposedPort), workspacePath);
             System.out.println("Container started with ID: " + launch.containerId()
                     + " on host port " + launch.hostPort());
             System.out.println("Open workspace in VS Code (attached container):");
@@ -105,15 +121,34 @@ public class DockerRunnerService {
         return "/workspace/" + matcher.group(1);
     }
 
+    /** Stops the container without removing it, so it can be started and reconnected to later. */
     public void stop(String containerId) {
         System.out.println("Stopping container: " + containerId);
         try {
             dockerClient.stopContainerCmd(containerId).withTimeout(10).exec();
-            dockerClient.removeContainerCmd(containerId).exec();
-            System.out.println("Container stopped and removed");
+            System.out.println("Container stopped");
         } catch (Exception e) {
-            System.err.println("Error during container cleanup: " + e.getMessage());
+            System.err.println("Error stopping container " + containerId + ": " + e.getMessage());
         }
+    }
+
+    /** Stops and deletes the container along with everything in its workspace. */
+    public void remove(String containerId) {
+        stop(containerId);
+        try {
+            dockerClient.removeContainerCmd(containerId).exec();
+            System.out.println("Container removed");
+        } catch (Exception e) {
+            System.err.println("Error removing container " + containerId + ": " + e.getMessage());
+        }
+    }
+
+    /** Starts a stopped runner container again; Docker publishes a new host port, so it is re-read here. */
+    public ContainerLaunch restart(String containerId, String workspacePath) {
+        dockerClient.startContainerCmd(containerId).exec();
+        int hostPort = getAllocatedHostPort(containerId, ExposedPort.tcp(AGENT_PORT));
+        System.out.println("Container " + containerId + " restarted on host port " + hostPort);
+        return new ContainerLaunch(containerId, hostPort, workspacePath);
     }
 
     /**
@@ -155,25 +190,44 @@ public class DockerRunnerService {
     }
 
     /**
-     * Stops and removes any labeled runner containers left behind by a previous, uncleanly-stopped
-     * run (e.g. the JVM was force-killed and never reached the graceful shutdown path). Every
-     * labeled container found here is by definition an orphan, since this runs before any runner
-     * has been started in the current process.
+     * Finds the runner containers left behind by a previous application run, so they can be started
+     * again and reconnected to. Containers predating the identity labels cannot be adopted (their
+     * runner id and repository are unknown), so they are deleted here.
      */
-    public void pruneOrphans() {
-        List<Container> orphans = dockerClient.listContainersCmd()
+    public List<ManagedContainer> listManaged() {
+        List<Container> containers = dockerClient.listContainersCmd()
             .withShowAll(true)
             .withLabelFilter(Map.of(MANAGED_LABEL, "true"))
             .exec();
 
-        if (orphans.isEmpty()) {
-            return;
-        }
+        List<ManagedContainer> managed = new ArrayList<>();
+        for (Container container : containers) {
+            Map<String, String> labels = container.getLabels() == null ? Map.of() : container.getLabels();
+            String runnerId = labels.get(RUNNER_ID_LABEL);
+            if (runnerId == null || runnerId.isBlank()) {
+                System.out.println("Removing unidentifiable runner container " + container.getId()
+                        + " left by an older version");
+                remove(container.getId());
+                continue;
+            }
 
-        System.out.println("Found " + orphans.size() + " orphaned runner container(s) from a previous run; cleaning up");
-        for (Container orphan : orphans) {
-            stop(orphan.getId());
+            try {
+                managed.add(inspectManaged(container.getId(), runnerId, labels));
+            } catch (Exception e) {
+                System.err.println("Unable to inspect runner container " + container.getId() + ": " + e.getMessage());
+            }
         }
+        return managed;
+    }
+
+    private ManagedContainer inspectManaged(String containerId, String runnerId, Map<String, String> labels) {
+        InspectContainerResponse inspect = dockerClient.inspectContainerCmd(containerId).exec();
+        boolean running = Boolean.TRUE.equals(inspect.getState().getRunning());
+        String workspacePath = labels.getOrDefault(WORKSPACE_PATH_LABEL, "/workspace");
+        // Docker assigns a new host port whenever it restarts the container, so it is never remembered.
+        int hostPort = running ? getAllocatedHostPort(inspect, ExposedPort.tcp(AGENT_PORT)) : 0;
+        return new ManagedContainer(runnerId, labels.getOrDefault(REPO_URL_LABEL, ""),
+                new ContainerLaunch(containerId, hostPort, workspacePath), running);
     }
 
     /**
@@ -200,7 +254,10 @@ public class DockerRunnerService {
     }
 
     private int getAllocatedHostPort(String containerId, ExposedPort exposedPort) {
-        var containerInfo = dockerClient.inspectContainerCmd(containerId).exec();
+        return getAllocatedHostPort(dockerClient.inspectContainerCmd(containerId).exec(), exposedPort);
+    }
+
+    private int getAllocatedHostPort(InspectContainerResponse containerInfo, ExposedPort exposedPort) {
         var portBindings = containerInfo.getNetworkSettings().getPorts().getBindings().get(exposedPort);
 
         if (portBindings == null || portBindings.length == 0 || portBindings[0].getHostPortSpec() == null) {

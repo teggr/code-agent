@@ -82,6 +82,11 @@ class RunnerEventPublisherTest {
             public void onStatusChange(RunnerSession s, RunnerStatus status) {
                 publisher.publishStatus(s, status);
             }
+
+            @Override
+            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.agent.Question question) {
+                publisher.publishQuestion(s, question);
+            }
         });
 
         session.addMessage("assistant", "from listener");
@@ -104,6 +109,11 @@ class RunnerEventPublisherTest {
             @Override
             public void onStatusChange(RunnerSession s, RunnerStatus status) {
                 publisher.publishStatus(s, status);
+            }
+
+            @Override
+            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.agent.Question question) {
+                publisher.publishQuestion(s, question);
             }
         });
         int eventsBeforeMessage = sent(emitter).size();

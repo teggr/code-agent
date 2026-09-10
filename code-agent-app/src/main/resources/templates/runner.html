@@ -32,6 +32,15 @@
          th:classappend="${vscodeReady} ? '' : ' disabled'"
          th:href="${vscodeReady} ? ${devContainerUri} : '#'"
          th:text="${vscodeReady} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
+      <form method="post" th:action="|/runners/${runnerId}/stop|" style="display:inline">
+        <button class="button" type="submit" th:disabled="${!promptable}">Stop runner</button>
+      </form>
+      <form method="post" th:action="|/runners/${runnerId}/start|" style="display:inline">
+        <button class="button" type="submit" th:disabled="${promptable}">Start runner</button>
+      </form>
+      <form method="post" th:action="|/runners/${runnerId}/remove|" style="display:inline">
+        <button class="button" type="submit">Remove runner</button>
+      </form>
     </nav>
     <div class="panel">
       <div class="row"><h2>Runner: <span th:text="${runnerId}">runner-id</span></h2></div>
@@ -74,10 +83,11 @@
     <div class="panel">
       <form method="post" th:action="|/runners/${runnerId}/prompt|">
         <div class="row">
-          <textarea name="prompt" rows="5" placeholder="Send a message to this runner"></textarea>
+          <textarea name="prompt" rows="5" th:disabled="${!promptable}"
+                    th:placeholder="${promptable} ? 'Send a message to this runner' : 'No agent is connected to this runner'"></textarea>
         </div>
         <div class="row">
-          <button class="button" type="submit">Send message</button>
+          <button class="button" type="submit" th:disabled="${!promptable}">Send message</button>
           <button class="button" id="stop-button" type="submit" formmethod="post"
                   th:formaction="|/runners/${runnerId}/abort|"
                   th:classappend="${status.name() == 'BUSY'} ? '' : ' disabled'">Stop</button>

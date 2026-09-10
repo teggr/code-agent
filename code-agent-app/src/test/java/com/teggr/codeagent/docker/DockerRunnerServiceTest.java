@@ -4,7 +4,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
@@ -41,7 +41,7 @@ class DockerRunnerServiceTest {
 
     @Test
     void launchRejectsMissingGhToken() {
-        assertThatThrownBy(() -> service.launch("https://github.com/fanduel/withdrawals"))
+        assertThatThrownBy(() -> service.launch("https://github.com/fanduel/withdrawals", "runner-1"))
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("GH_TOKEN environment variable is not set");
     }
@@ -63,19 +63,9 @@ class DockerRunnerServiceTest {
         StartContainerCmd startContainerCmd = mock(StartContainerCmd.class);
         when(dockerClient.startContainerCmd("container-1")).thenReturn(startContainerCmd);
 
-        InspectContainerCmd inspectCmd = mock(InspectContainerCmd.class);
-        InspectContainerResponse inspectResponse = mock(InspectContainerResponse.class);
-        com.github.dockerjava.api.model.NetworkSettings networkSettings = mock(com.github.dockerjava.api.model.NetworkSettings.class);
-        com.github.dockerjava.api.model.Ports ports = mock(com.github.dockerjava.api.model.Ports.class);
-        com.github.dockerjava.api.model.Ports.Binding binding = mock(com.github.dockerjava.api.model.Ports.Binding.class);
-        when(binding.getHostPortSpec()).thenReturn("4321");
-        when(ports.getBindings()).thenReturn(Map.of(ExposedPort.tcp(4321), new com.github.dockerjava.api.model.Ports.Binding[] {binding}));
-        when(networkSettings.getPorts()).thenReturn(ports);
-        when(inspectResponse.getNetworkSettings()).thenReturn(networkSettings);
-        when(inspectCmd.exec()).thenReturn(inspectResponse);
-        when(dockerClient.inspectContainerCmd("container-1")).thenReturn(inspectCmd);
+        stubPublishedPort("container-1", "4321");
 
-        runnerService.launch("https://github.com/fanduel/withdrawals");
+        runnerService.launch("https://github.com/fanduel/withdrawals", "runner-1");
 
         verify(createContainerCmd).withEnv("GH_TOKEN=git-token",
                 "COPILOT_GITHUB_TOKEN=git-token",
@@ -83,39 +73,155 @@ class DockerRunnerServiceTest {
     }
 
     @Test
-    void pruneOrphansStopsAndRemovesEveryLabeledContainer() {
-        ListContainersCmd listContainersCmd = mock(ListContainersCmd.class, org.mockito.Answers.RETURNS_SELF);
-        Container orphan1 = mock(Container.class);
-        Container orphan2 = mock(Container.class);
-        when(orphan1.getId()).thenReturn("orphan-1");
-        when(orphan2.getId()).thenReturn("orphan-2");
-        when(dockerClient.listContainersCmd()).thenReturn(listContainersCmd);
-        when(listContainersCmd.exec()).thenReturn(List.of(orphan1, orphan2));
+    void launchLabelsTheContainerWithRunnerIdentity() throws Exception {
+        DockerRunnerProperties properties = new DockerRunnerProperties();
+        properties.setGitToken("git-token");
+        DockerRunnerService runnerService = new DockerRunnerService(dockerClient, properties);
 
-        StopContainerCmd stopCmd = mock(StopContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
-        RemoveContainerCmd removeCmd = mock(RemoveContainerCmd.class);
-        when(dockerClient.stopContainerCmd(any())).thenReturn(stopCmd);
-        when(dockerClient.removeContainerCmd(any())).thenReturn(removeCmd);
+        stubInfo("linux");
 
-        service.pruneOrphans();
+        CreateContainerCmd createContainerCmd = mock(CreateContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
+        CreateContainerResponse createContainerResponse = mock(CreateContainerResponse.class);
+        when(createContainerResponse.getId()).thenReturn("container-1");
+        when(createContainerCmd.exec()).thenReturn(createContainerResponse);
+        when(dockerClient.createContainerCmd(any())).thenReturn(createContainerCmd);
+        when(dockerClient.startContainerCmd("container-1")).thenReturn(mock(StartContainerCmd.class));
+        stubPublishedPort("container-1", "4321");
 
-        verify(listContainersCmd).withLabelFilter(Map.of(DockerRunnerService.MANAGED_LABEL, "true"));
-        verify(listContainersCmd).withShowAll(true);
-        verify(dockerClient).stopContainerCmd(eq("orphan-1"));
-        verify(dockerClient).stopContainerCmd(eq("orphan-2"));
-        verify(dockerClient).removeContainerCmd(eq("orphan-1"));
-        verify(dockerClient).removeContainerCmd(eq("orphan-2"));
+        runnerService.launch("https://github.com/fanduel/withdrawals", "runner-1");
+
+        ArgumentCaptor<Map<String, String>> labels = ArgumentCaptor.forClass(Map.class);
+        verify(createContainerCmd).withLabels(labels.capture());
+        assertThat(labels.getValue())
+            .containsEntry(DockerRunnerService.MANAGED_LABEL, "true")
+            .containsEntry(DockerRunnerService.RUNNER_ID_LABEL, "runner-1")
+            .containsEntry(DockerRunnerService.REPO_URL_LABEL, "https://github.com/fanduel/withdrawals")
+            .containsEntry(DockerRunnerService.WORKSPACE_PATH_LABEL, "/workspace/withdrawals")
+            .containsKey(DockerRunnerService.CREATED_AT_LABEL);
     }
 
     @Test
-    void pruneOrphansDoesNothingWhenNoneFound() {
+    void stopLeavesTheContainerInPlaceSoItCanBeStartedAgain() {
+        StopContainerCmd stopCmd = mock(StopContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
+        when(dockerClient.stopContainerCmd("container-1")).thenReturn(stopCmd);
+
+        service.stop("container-1");
+
+        verify(dockerClient).stopContainerCmd("container-1");
+        verify(dockerClient, never()).removeContainerCmd(any());
+    }
+
+    @Test
+    void removeStopsAndDeletesTheContainer() {
+        StopContainerCmd stopCmd = mock(StopContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
+        when(dockerClient.stopContainerCmd("container-1")).thenReturn(stopCmd);
+        when(dockerClient.removeContainerCmd("container-1")).thenReturn(mock(RemoveContainerCmd.class));
+
+        service.remove("container-1");
+
+        verify(dockerClient).stopContainerCmd("container-1");
+        verify(dockerClient).removeContainerCmd("container-1");
+    }
+
+    @Test
+    void restartStartsTheContainerAgainAndPicksUpTheNewHostPort() {
+        when(dockerClient.startContainerCmd("container-1")).thenReturn(mock(StartContainerCmd.class));
+        stubPublishedPort("container-1", "51001");
+
+        ContainerLaunch launch = service.restart("container-1", "/workspace/withdrawals");
+
+        verify(dockerClient).startContainerCmd("container-1");
+        assertThat(launch.hostPort()).isEqualTo(51001);
+        assertThat(launch.workspacePath()).isEqualTo("/workspace/withdrawals");
+        assertThat(launch.devContainerUri()).contains("/workspace/withdrawals");
+    }
+
+    @Test
+    void listManagedRebuildsRunnersFromLabelsAndReReadsThePublishedPort() {
+        Container running = managedContainer("container-1", Map.of(
+                DockerRunnerService.MANAGED_LABEL, "true",
+                DockerRunnerService.RUNNER_ID_LABEL, "runner-1",
+                DockerRunnerService.REPO_URL_LABEL, "https://github.com/fanduel/withdrawals",
+                DockerRunnerService.WORKSPACE_PATH_LABEL, "/workspace/withdrawals"));
+        Container exited = managedContainer("container-2", Map.of(
+                DockerRunnerService.MANAGED_LABEL, "true",
+                DockerRunnerService.RUNNER_ID_LABEL, "runner-2",
+                DockerRunnerService.REPO_URL_LABEL, "https://github.com/fanduel/withdrawals",
+                DockerRunnerService.WORKSPACE_PATH_LABEL, "/workspace/withdrawals"));
+        stubListContainers(running, exited);
+        stubInspect("container-1", true, "51000");
+        stubInspect("container-2", false, null);
+
+        List<ManagedContainer> managed = service.listManaged();
+
+        assertThat(managed).extracting(ManagedContainer::runnerId).containsExactly("runner-1", "runner-2");
+        assertThat(managed.get(0).running()).isTrue();
+        assertThat(managed.get(0).launch().hostPort()).isEqualTo(51000);
+        assertThat(managed.get(0).launch().devContainerUri()).contains("/workspace/withdrawals");
+        assertThat(managed.get(1).running()).isFalse();
+        assertThat(managed.get(1).launch().hostPort()).isZero();
+    }
+
+    @Test
+    void listManagedRemovesContainersThatCarryNoRunnerId() {
+        stubListContainers(managedContainer("legacy-1", Map.of(DockerRunnerService.MANAGED_LABEL, "true")));
+        StopContainerCmd stopCmd = mock(StopContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
+        when(dockerClient.stopContainerCmd(any())).thenReturn(stopCmd);
+        when(dockerClient.removeContainerCmd(any())).thenReturn(mock(RemoveContainerCmd.class));
+
+        assertThat(service.listManaged()).isEmpty();
+
+        verify(dockerClient).stopContainerCmd("legacy-1");
+        verify(dockerClient).removeContainerCmd("legacy-1");
+    }
+
+    private Container managedContainer(String id, Map<String, String> labels) {
+        Container container = mock(Container.class);
+        when(container.getId()).thenReturn(id);
+        when(container.getLabels()).thenReturn(labels);
+        return container;
+    }
+
+    private void stubListContainers(Container... containers) {
         ListContainersCmd listContainersCmd = mock(ListContainersCmd.class, org.mockito.Answers.RETURNS_SELF);
         when(dockerClient.listContainersCmd()).thenReturn(listContainersCmd);
-        when(listContainersCmd.exec()).thenReturn(List.of());
+        when(listContainersCmd.exec()).thenReturn(List.of(containers));
+    }
 
-        service.pruneOrphans();
+    private void stubInspect(String containerId, boolean running, String hostPortSpec) {
+        InspectContainerCmd inspectCmd = mock(InspectContainerCmd.class);
+        InspectContainerResponse response = mock(InspectContainerResponse.class);
+        InspectContainerResponse.ContainerState state = mock(InspectContainerResponse.ContainerState.class);
+        when(state.getRunning()).thenReturn(running);
+        when(response.getState()).thenReturn(state);
+        if (running) {
+            var networkSettings = networkSettings(hostPortSpec);
+            when(response.getNetworkSettings()).thenReturn(networkSettings);
+        }
+        when(inspectCmd.exec()).thenReturn(response);
+        when(dockerClient.inspectContainerCmd(containerId)).thenReturn(inspectCmd);
+    }
 
-        verify(dockerClient, never()).stopContainerCmd(any());
+    private void stubPublishedPort(String containerId, String hostPortSpec) {
+        InspectContainerCmd inspectCmd = mock(InspectContainerCmd.class);
+        InspectContainerResponse response = mock(InspectContainerResponse.class);
+        var networkSettings = networkSettings(hostPortSpec);
+        when(response.getNetworkSettings()).thenReturn(networkSettings);
+        when(inspectCmd.exec()).thenReturn(response);
+        when(dockerClient.inspectContainerCmd(containerId)).thenReturn(inspectCmd);
+    }
+
+    private com.github.dockerjava.api.model.NetworkSettings networkSettings(String hostPortSpec) {
+        com.github.dockerjava.api.model.NetworkSettings networkSettings =
+                mock(com.github.dockerjava.api.model.NetworkSettings.class);
+        com.github.dockerjava.api.model.Ports ports = mock(com.github.dockerjava.api.model.Ports.class);
+        com.github.dockerjava.api.model.Ports.Binding binding = mock(com.github.dockerjava.api.model.Ports.Binding.class);
+        when(binding.getHostPortSpec()).thenReturn(hostPortSpec);
+        Map<ExposedPort, com.github.dockerjava.api.model.Ports.Binding[]> bindings =
+                Map.of(ExposedPort.tcp(4321), new com.github.dockerjava.api.model.Ports.Binding[] {binding});
+        when(ports.getBindings()).thenReturn(bindings);
+        when(networkSettings.getPorts()).thenReturn(ports);
+        return networkSettings;
     }
 
     @Test

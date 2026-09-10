@@ -8,7 +8,7 @@ public class DockerRunnerProperties {
     private String image = "teggr/code-agent-runner:0.1.0-SNAPSHOT";
     private String gitToken = "";
     private String copilotToken = "";
-    private boolean pruneOrphansOnStartup = true;
+    private boolean adoptExistingOnStartup = true;
     private String dockerSocketPath = "";
 
     public String getImage() {
@@ -35,12 +35,12 @@ public class DockerRunnerProperties {
         this.copilotToken = copilotToken;
     }
 
-    public boolean isPruneOrphansOnStartup() {
-        return pruneOrphansOnStartup;
+    public boolean isAdoptExistingOnStartup() {
+        return adoptExistingOnStartup;
     }
 
-    public void setPruneOrphansOnStartup(boolean pruneOrphansOnStartup) {
-        this.pruneOrphansOnStartup = pruneOrphansOnStartup;
+    public void setAdoptExistingOnStartup(boolean adoptExistingOnStartup) {
+        this.adoptExistingOnStartup = adoptExistingOnStartup;
     }
 
     public String getDockerSocketPath() {

@@ -62,6 +62,15 @@
           <a class="button" th:classappend="${runnerSession.ready} ? '' : ' disabled'"
              th:href="${runnerSession.ready} ? ${runnerSession.runner.containerLaunch.devContainerUri} : '#'"
              th:text="${runnerSession.ready} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
+          <form method="post" th:action="|/runners/${runnerSession.runner.id}/stop|" style="display:inline">
+            <button class="button" type="submit" th:disabled="${!runnerSession.ready}">Stop</button>
+          </form>
+          <form method="post" th:action="|/runners/${runnerSession.runner.id}/start|" style="display:inline">
+            <button class="button" type="submit" th:disabled="${runnerSession.ready}">Start</button>
+          </form>
+          <form method="post" th:action="|/runners/${runnerSession.runner.id}/remove|" style="display:inline">
+            <button class="button" type="submit">Remove</button>
+          </form>
         </div>
       </div>
     </div>

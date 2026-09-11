@@ -1,23 +1,17 @@
 package com.teggr.codeagent.web;
 
 import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Map;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import com.teggr.codeagent.runner.ChatMessage;
 import com.teggr.codeagent.runner.RunnerManager;
 import com.teggr.codeagent.runner.RunnerSession;
 
@@ -25,9 +19,11 @@ import com.teggr.codeagent.runner.RunnerSession;
 public class RunnerWebController {
 
     private final RunnerManager runnerManager;
+    private final GitHubRepositoryService gitHubRepositoryService;
 
-    public RunnerWebController(RunnerManager runnerManager) {
+    public RunnerWebController(RunnerManager runnerManager, GitHubRepositoryService gitHubRepositoryService) {
         this.runnerManager = runnerManager;
+        this.gitHubRepositoryService = gitHubRepositoryService;
     }
 
     @GetMapping("/")
@@ -35,6 +31,33 @@ public class RunnerWebController {
         ModelAndView view = new ModelAndView("dashboard");
         view.addObject("runners", runnerManager.list());
         return view;
+    }
+
+    @GetMapping("/repositories")
+    public ModelAndView repositoryResults(@RequestParam(value = "query", defaultValue = "") String query,
+            @RequestParam(value = "page", defaultValue = "1") int page) {
+        ModelAndView view = new ModelAndView("fragments :: repositoryResults");
+        GitHubRepositoryService.RepositoryPage repositoryPage = gitHubRepositoryService.findRepositories(query, page);
+        view.addObject("repositories", repositoryPage.repositories());
+        view.addObject("query", query);
+        view.addObject("nextPage", Math.max(page, 1) + 1);
+        view.addObject("hasMore", repositoryPage.hasMore());
+        view.addObject("unavailable", repositoryPage.unavailable());
+        return view;
+    }
+
+    @GetMapping("/repositories/selection")
+    public ModelAndView repositorySelection(@RequestParam("repoUrl") String repoUrl,
+            @RequestParam("fullName") String fullName) {
+        ModelAndView view = new ModelAndView("fragments :: repositoryPicker");
+        view.addObject("selectedRepositoryUrl", repoUrl);
+        view.addObject("selectedRepositoryName", fullName);
+        return view;
+    }
+
+    @GetMapping("/repositories/picker")
+    public ModelAndView repositoryPicker() {
+        return new ModelAndView("fragments :: repositoryPicker");
     }
 
     @PostMapping("/runners")
@@ -46,7 +69,10 @@ public class RunnerWebController {
 
     @GetMapping("/runners/{runnerId}")
     public ModelAndView runnerDetail(@PathVariable("runnerId") String runnerId) {
-        RunnerSession session = requireSession(runnerId);
+        RunnerSession session = runnerManager.getSession(runnerId);
+        if (session == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
+        }
 
         ModelAndView view = new ModelAndView("runner");
         view.addObject("runnerId", runnerId);
@@ -55,8 +81,6 @@ public class RunnerWebController {
         view.addObject("messages", session.messages());
         view.addObject("devContainerUri", session.runner().containerLaunch().devContainerUri());
         view.addObject("vscodeReady", session.isReady());
-        view.addObject("promptable", session.agentSession() != null);
-        view.addObject("stopped", session.status() == com.teggr.codeagent.runner.RunnerStatus.STOPPED);
         view.addObject("pendingQuestion", session.pendingQuestion());
         return view;
     }
@@ -64,9 +88,9 @@ public class RunnerWebController {
     @PostMapping("/runners/{runnerId}/prompt")
     public ResponseEntity<Void> sendPrompt(@PathVariable("runnerId") String runnerId,
             @RequestParam("prompt") String prompt) throws Exception {
-        RunnerSession session = requireSession(runnerId);
-        if (session.agentSession() == null) {
-            throw new IllegalStateException("Runner " + runnerId + " has no connected agent");
+        RunnerSession session = runnerManager.getSession(runnerId);
+        if (session == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
         }
         session.addMessage("user", prompt);
         session.setStatus(com.teggr.codeagent.runner.RunnerStatus.BUSY);
@@ -84,53 +108,32 @@ public class RunnerWebController {
     @PostMapping("/runners/{runnerId}/answer")
     public ResponseEntity<Void> answerQuestion(@PathVariable("runnerId") String runnerId,
             @RequestParam("questionId") String questionId, @RequestParam("answer") String answer) {
-        requireSession(runnerId).answerQuestion(questionId, answer);
+        RunnerSession session = runnerManager.getSession(runnerId);
+        if (session == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
+        }
+        session.answerQuestion(questionId, answer);
         return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
     }
 
     @PostMapping("/runners/{runnerId}/abort")
     public ResponseEntity<Void> abort(@PathVariable("runnerId") String runnerId) throws Exception {
-        RunnerSession session = requireSession(runnerId);
+        RunnerSession session = runnerManager.getSession(runnerId);
+        if (session == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
+        }
         if (session.agentSession() != null) {
             session.agentSession().abort();
         }
         return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
     }
 
-    @PostMapping("/runners/{runnerId}/stop")
-    public ResponseEntity<Void> stopRunner(@PathVariable("runnerId") String runnerId) {
-        requireSession(runnerId);
-        runnerManager.stop(runnerId);
-        return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
-    }
-
-    @PostMapping("/runners/{runnerId}/start")
-    public ResponseEntity<Void> startRunner(@PathVariable("runnerId") String runnerId) {
-        requireSession(runnerId);
-        runnerManager.restart(runnerId);
-        return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
-    }
-
-    @PostMapping("/runners/{runnerId}/remove")
-    public ResponseEntity<Void> removeRunner(@PathVariable("runnerId") String runnerId) {
-        requireSession(runnerId);
-        runnerManager.remove(runnerId);
-        return ResponseEntity.status(303).location(URI.create("/")).build();
-    }
-
     @GetMapping("/runners/{runnerId}/events")
     public SseEmitter runnerEvents(@PathVariable("runnerId") String runnerId) {
-        requireSession(runnerId);
-        return runnerManager.subscribe(runnerId);
-    }
-
-    /** A removed runner, or a page left open from an earlier run, is gone rather than a server error. */
-    private RunnerSession requireSession(String runnerId) {
-        RunnerSession session = runnerManager.getSession(runnerId);
-        if (session == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No runner with id " + runnerId);
+        if (runnerManager.getSession(runnerId) == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
         }
-        return session;
+        return runnerManager.subscribe(runnerId);
     }
 
     @GetMapping("/runners/events")

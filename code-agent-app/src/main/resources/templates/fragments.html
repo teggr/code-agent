@@ -2,6 +2,39 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
 
+  <div th:fragment="repositoryPicker" id="repository-picker">
+    <div th:if="${selectedRepositoryUrl != null}" class="row">
+      <input type="hidden" name="repoUrl" th:value="${selectedRepositoryUrl}"/>
+      <span th:text="${selectedRepositoryName}">owner/repository</span>
+            <button class="button" type="button" hx-get="/repositories/picker" hx-target="#repository-picker"
+              hx-swap="outerHTML">Change</button>
+    </div>
+    <div th:unless="${selectedRepositoryUrl != null}">
+      <div class="row">
+         <input type="search" name="query" placeholder="Search repositories" autocomplete="off"
+           onkeydown="if (event.key === 'Enter') event.preventDefault();"
+               hx-get="/repositories" hx-trigger="input changed delay:250ms, search" hx-target="#repository-results"
+               hx-swap="innerHTML"/>
+      </div>
+      <div id="repository-results"></div>
+    </div>
+  </div>
+
+  <div th:fragment="repositoryResults" id="repository-results">
+    <p th:if="${unavailable}" class="meta">Repositories are unavailable. Check the configured GitHub token.</p>
+    <p th:if="${!unavailable and #lists.isEmpty(repositories)}" class="meta">No repositories found.</p>
+    <div th:each="repository : ${repositories}" class="card">
+      <div>
+        <strong th:text="${repository.fullName}">owner/repository</strong>
+        <div class="meta"><span th:text="${repository.visibilityLabel}">Private</span></div>
+      </div>
+      <button class="button" type="button" hx-get="/repositories/selection" hx-target="#repository-picker"
+              hx-swap="outerHTML" th:hx-vals="|{&quot;repoUrl&quot;:&quot;${repository.htmlUrl}&quot;,&quot;fullName&quot;:&quot;${repository.fullName}&quot;}|">Select</button>
+    </div>
+    <button th:if="${hasMore}" class="button" type="button" hx-get="/repositories" hx-target="#repository-results"
+            hx-swap="innerHTML" th:hx-vals="|{&quot;query&quot;:&quot;${query}&quot;,&quot;page&quot;:${nextPage}}|">Load more</button>
+  </div>
+
   <!-- One chat message; appended via hx-swap="beforeend" on the runner page. -->
   <div th:fragment="message(message)" class="msg" th:classappend="'msg-' + ${message.role}">
     <span class="role" th:text="${message.role}">user</span>
@@ -62,15 +95,6 @@
           <a class="button" th:classappend="${runnerSession.ready} ? '' : ' disabled'"
              th:href="${runnerSession.ready} ? ${runnerSession.runner.containerLaunch.devContainerUri} : '#'"
              th:text="${runnerSession.ready} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
-          <form method="post" th:action="|/runners/${runnerSession.runner.id}/stop|" style="display:inline">
-            <button class="button" type="submit" th:disabled="${!runnerSession.ready}">Stop</button>
-          </form>
-          <form method="post" th:action="|/runners/${runnerSession.runner.id}/start|" style="display:inline">
-            <button class="button" type="submit" th:disabled="${runnerSession.ready}">Start</button>
-          </form>
-          <form method="post" th:action="|/runners/${runnerSession.runner.id}/remove|" style="display:inline">
-            <button class="button" type="submit">Remove</button>
-          </form>
         </div>
       </div>
     </div>

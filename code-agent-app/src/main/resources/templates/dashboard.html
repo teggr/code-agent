@@ -25,9 +25,7 @@
     <div class="panel">
       <h2>Start a new runner</h2>
       <form method="post" action="/runners">
-        <div class="row">
-          <input name="repoUrl" value="https://github.com/teggr/j2html-toolkit" placeholder="Repository URL"/>
-        </div>
+        <div th:replace="~{fragments :: repositoryPicker}"></div>
         <div class="row">
           <textarea name="prompt" rows="5" placeholder="Describe the task you want the agent to run"></textarea>
         </div>

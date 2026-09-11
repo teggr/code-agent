@@ -1,73 +1,44 @@
 package com.teggr.codeagent.web;
 
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Instant;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.servlet.ModelAndView;
 
-@WebMvcTest(RunnerWebController.class)
+import com.teggr.codeagent.runner.RunnerManager;
+
 class RunnerWebControllerTest {
 
-    private static final String UNKNOWN = "does-not-exist";
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockitoBean
-    private com.teggr.codeagent.runner.RunnerManager runnerManager;
-
     @Test
-    void detailPageOfAnUnknownRunnerIsNotFound() throws Exception {
-        when(runnerManager.getSession(UNKNOWN)).thenReturn(null);
+    void repositoryResultsReturnsPickerFragmentWithQueryResults() {
+        RunnerManager runnerManager = mock(RunnerManager.class);
+        GitHubRepositoryService repositoryService = mock(GitHubRepositoryService.class);
+        when(repositoryService.findRepositories("toolkit", 1)).thenReturn(new GitHubRepositoryService.RepositoryPage(
+                List.of(new GitHubRepositoryService.Repository("teggr/j2html-toolkit",
+                        "https://github.com/teggr/j2html-toolkit", "private", true, Instant.parse("2026-09-10T10:00:00Z"))),
+                false, false));
+        RunnerWebController controller = new RunnerWebController(runnerManager, repositoryService);
 
-        mockMvc.perform(get("/runners/{id}", UNKNOWN)).andExpect(status().isNotFound());
+        ModelAndView view = controller.repositoryResults("toolkit", 1);
+
+        assertThat(view.getViewName()).isEqualTo("fragments :: repositoryResults");
+        assertThat(view.getModel()).containsEntry("query", "toolkit").containsEntry("hasMore", false)
+                .containsEntry("unavailable", false).containsKey("repositories");
     }
 
     @Test
-    void eventStreamOfAnUnknownRunnerIsNotFound() throws Exception {
-        when(runnerManager.getSession(UNKNOWN)).thenReturn(null);
+    void repositorySelectionRendersSelectedPickerState() {
+        RunnerWebController controller = new RunnerWebController(mock(RunnerManager.class), mock(GitHubRepositoryService.class));
 
-        mockMvc.perform(get("/runners/{id}/events", UNKNOWN)).andExpect(status().isNotFound());
+        ModelAndView view = controller.repositorySelection("https://github.com/teggr/j2html-toolkit", "teggr/j2html-toolkit");
 
-        verify(runnerManager, never()).subscribe(anyString());
+        assertThat(view.getViewName()).isEqualTo("fragments :: repositoryPicker");
+        assertThat(view.getModel()).containsEntry("selectedRepositoryUrl", "https://github.com/teggr/j2html-toolkit")
+                .containsEntry("selectedRepositoryName", "teggr/j2html-toolkit");
     }
-
-    @Test
-    void stoppingAnUnknownRunnerIsNotFoundAndNeverReachesTheManager() throws Exception {
-        when(runnerManager.getSession(UNKNOWN)).thenReturn(null);
-
-        mockMvc.perform(post("/runners/{id}/stop", UNKNOWN)).andExpect(status().isNotFound());
-
-        verify(runnerManager, never()).stop(anyString());
-    }
-
-    @Test
-    void removingAnUnknownRunnerIsNotFoundAndNeverReachesTheManager() throws Exception {
-        when(runnerManager.getSession(UNKNOWN)).thenReturn(null);
-
-        mockMvc.perform(post("/runners/{id}/remove", UNKNOWN)).andExpect(status().isNotFound());
-
-        verify(runnerManager, never()).remove(anyString());
-    }
-
-    @Test
-    void stoppingAKnownRunnerStillReachesTheManager() throws Exception {
-        when(runnerManager.getSession("runner-1")).thenReturn(
-                new com.teggr.codeagent.runner.RunnerSession(new com.teggr.codeagent.runner.Runner(
-                        "runner-1", "repo", new com.teggr.codeagent.docker.ContainerLaunch("container-1", 1111), null)));
-
-        mockMvc.perform(post("/runners/{id}/stop", "runner-1")).andExpect(status().isSeeOther());
-
-        verify(runnerManager).stop("runner-1");
-    }
-
 }

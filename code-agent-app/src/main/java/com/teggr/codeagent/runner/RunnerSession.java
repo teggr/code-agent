@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.teggr.codeagent.agent.AgentSession;
+import com.teggr.codeagent.agent.AgentHistoryEntry;
 import com.teggr.codeagent.agent.Question;
 
 public class RunnerSession {
@@ -44,6 +45,7 @@ public class RunnerSession {
     /** Attaches the agent session and registers message listeners exactly once. */
     public void attachAgent(AgentSession agentSession) {
         this.agentSession = agentSession;
+        loadHistory(agentSession);
         agentSession.onMessage(content -> addMessage("assistant", content));
         agentSession.onIdle(() -> {
             if (status() != RunnerStatus.FAILED) {
@@ -67,6 +69,26 @@ public class RunnerSession {
             }
             return future;
         });
+    }
+
+    private void loadHistory(AgentSession agentSession) {
+        if (!messages.isEmpty()) {
+            return;
+        }
+        try {
+            List<AgentHistoryEntry> history = agentSession.history();
+            if (history == null || history.isEmpty()) {
+                return;
+            }
+            for (AgentHistoryEntry entry : history) {
+                if (entry == null || entry.content() == null || entry.content().isBlank()) {
+                    continue;
+                }
+                messages.add(new ChatMessage(UUID.randomUUID().toString(), entry.role(), entry.content(), Instant.now()));
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading session history for runner " + runner.id() + ": " + e.getMessage());
+        }
     }
 
     /** Drops the agent session and anything waiting on it, leaving the runner's message history intact. */

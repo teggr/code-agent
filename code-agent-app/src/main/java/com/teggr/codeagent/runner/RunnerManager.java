@@ -79,7 +79,7 @@ public class RunnerManager {
         RunnerSession session = new RunnerSession(new Runner(runnerId, owner.runner().repoUrl(),
                 owner.runner().containerLaunch(), harness));
         wireEvents(session);
-        session.attachAgent(harness.createSession());
+        session.attachAgent(harness.createSession(session.id()));
         session.setStatus(RunnerStatus.IDLE);
         sessionsByRunner.computeIfAbsent(runnerId, ignored -> new ConcurrentHashMap<>())
                 .put(session.id(), session);
@@ -135,6 +135,7 @@ public class RunnerManager {
         AgentHarness harness;
         try {
             harness = agentHarnessFactory.connect(containerLaunch.hostPort(),
+                    containerLaunch.workspacePath(),
                     () -> dockerRunnerService.verifyRunning(containerLaunch.containerId()));
         } catch (Exception e) {
             dockerRunnerService.remove(containerLaunch.containerId());
@@ -144,7 +145,7 @@ public class RunnerManager {
         Runner runner = new Runner(runnerId, repoUrl, containerLaunch, harness);
         RunnerSession session = new RunnerSession(runner);
         wireEvents(session);
-        session.attachAgent(harness.createSession());
+        session.attachAgent(harness.createSession(session.id()));
         session.setStatus(RunnerStatus.IDLE);
         registerSession(session);
         eventPublisher.publishRunnerList();
@@ -168,11 +169,12 @@ public class RunnerManager {
                 System.out.println("[runner " + runnerId + "] Container " + containerLaunch.containerId()
                         + " on host port " + containerLaunch.hostPort() + "; connecting agent");
                 AgentHarness harness = agentHarnessFactory.connect(containerLaunch.hostPort(),
+                        containerLaunch.workspacePath(),
                         () -> dockerRunnerService.verifyRunning(containerLaunch.containerId()));
                 Runner startedRunner = new Runner(runnerId, repoUrl, containerLaunch, harness);
                 session.setRunner(startedRunner);
                 eventPublisher.publishVscodeLink(session);
-                session.attachAgent(harness.createSession());
+                session.attachAgent(harness.createSession(session.id()));
                 System.out.println("[runner " + runnerId + "] Session created; sending prompt");
                 session.setStatus(RunnerStatus.BUSY);
                 session.agentSession().sendPrompt(prompt);
@@ -197,21 +199,15 @@ public class RunnerManager {
     }
 
     /**
-     * Re-registers the runner containers left by the previous application run, starting the ones
-     * that are stopped. Each runner gets a brand new agent session, so it is usable again but its
-     * earlier conversation is not restored.
+     * Re-registers the runner containers left by the previous application run, restoring any stored
+     * Copilot sessions from the runner container when available.
      */
     public void adoptExisting() {
         for (ManagedContainer managed : dockerRunnerService.listManaged()) {
             if (activeRunners.containsKey(managed.runnerId())) {
                 continue;
             }
-            RunnerSession session = new RunnerSession(
-                    new Runner(managed.runnerId(), managed.repoUrl(), managed.launch(), null));
-            wireEvents(session);
-                registerSession(session);
-            session.setStatus(RunnerStatus.RECONNECTING);
-            executor.submit(() -> reconnect(session, managed.launch(), !managed.running()));
+            executor.submit(() -> adoptManaged(managed));
         }
         eventPublisher.publishRunnerList();
     }
@@ -237,22 +233,66 @@ public class RunnerManager {
             System.out.println("[runner " + runnerId + "] Connecting to container "
                     + connected.containerId() + " on host port " + connected.hostPort());
             AgentHarness harness = agentHarnessFactory.connect(connected.hostPort(),
+                    connected.workspacePath(),
                     () -> dockerRunnerService.verifyRunning(connected.containerId()));
-                Runner connectedRunner = new Runner(runnerId, repoUrl, connected, harness);
-                for (RunnerSession child : sessions(runnerId)) {
+            Runner connectedRunner = new Runner(runnerId, repoUrl, connected, harness);
+            for (RunnerSession child : sessions(runnerId)) {
                 child.setRunner(connectedRunner);
                 eventPublisher.publishVscodeLink(child);
-                child.attachAgent(harness.createSession());
-                child.addMessage("system",
-                    "Reconnected to an existing runner; the earlier conversation is not available.");
+                reconnectChildSession(harness, child);
                 child.setStatus(RunnerStatus.IDLE);
-                }
+            }
         } catch (Exception e) {
             System.err.println("[runner " + runnerId + "] Reconnect failed: " + e.getMessage());
             session.setStatus(RunnerStatus.FAILED);
             session.addMessage("assistant", "Error reconnecting to runner: " + e.getMessage());
         }
         eventPublisher.publishRunnerList();
+    }
+
+    private void adoptManaged(ManagedContainer managed) {
+        String runnerId = managed.runnerId();
+        String repoUrl = managed.repoUrl();
+        try {
+            ContainerLaunch connected = managed.running()
+                    ? managed.launch()
+                    : dockerRunnerService.restart(managed.launch().containerId(), managed.launch().workspacePath());
+            AgentHarness harness = agentHarnessFactory.connect(connected.hostPort(), connected.workspacePath(),
+                    () -> dockerRunnerService.verifyRunning(connected.containerId()));
+            Runner connectedRunner = new Runner(runnerId, repoUrl, connected, harness);
+            List<String> sessionIds = harness.listSessionIds();
+            if (sessionIds == null || sessionIds.isEmpty()) {
+                RunnerSession session = new RunnerSession(connectedRunner);
+                wireEvents(session);
+                session.attachAgent(harness.createSession(session.id()));
+                session.addMessage("system", "Reconnected to an existing runner; no persisted session history was found.");
+                session.setStatus(RunnerStatus.IDLE);
+                registerSession(session);
+            } else {
+                for (String sessionId : sessionIds) {
+                    RunnerSession session = new RunnerSession(sessionId, connectedRunner);
+                    wireEvents(session);
+                    session.attachAgent(harness.resumeSession(sessionId));
+                    session.setStatus(RunnerStatus.IDLE);
+                    registerSession(session);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[runner " + runnerId + "] Adopt failed: " + e.getMessage());
+        }
+        eventPublisher.publishRunnerList();
+    }
+
+    private void reconnectChildSession(AgentHarness harness, RunnerSession child) throws Exception {
+        try {
+            child.attachAgent(harness.resumeSession(child.id()));
+        } catch (Exception e) {
+            System.err.println("[runner " + child.runner().id() + "] Unable to resume session " + child.id()
+                    + "; creating a new one: " + e.getMessage());
+            child.attachAgent(harness.createSession(child.id()));
+            child.addMessage("system",
+                    "Reconnected to an existing runner, but the earlier session could not be resumed.");
+        }
     }
 
     /** Stops the runner's container but keeps it, so the runner can be started again later. */

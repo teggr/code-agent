@@ -14,6 +14,7 @@ import com.teggr.codeagent.agent.Question;
 
 public class RunnerSession {
 
+    private final String id;
     private volatile Runner runner;
     private final List<ChatMessage> messages = new CopyOnWriteArrayList<>();
     private final AtomicReference<RunnerStatus> status = new AtomicReference<>(RunnerStatus.STARTING);
@@ -23,7 +24,16 @@ public class RunnerSession {
     private volatile Question pendingQuestion;
 
     public RunnerSession(Runner runner) {
+        this(UUID.randomUUID().toString(), runner);
+    }
+
+    public RunnerSession(String id, Runner runner) {
+        this.id = id;
         this.runner = runner;
+    }
+
+    public String id() {
+        return id;
     }
 
     /** Registers the single listener that receives message and status events. */

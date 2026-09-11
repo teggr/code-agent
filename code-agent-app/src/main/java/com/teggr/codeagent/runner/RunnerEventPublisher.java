@@ -22,6 +22,7 @@ public class RunnerEventPublisher {
 
     private final FragmentRenderer fragments;
     private final Map<String, CopyOnWriteArrayList<SseEmitter>> perRunner = new ConcurrentHashMap<>();
+    private final Map<String, CopyOnWriteArrayList<SseEmitter>> perSession = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<SseEmitter> dashboardSubscribers = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<SseEmitter> allEmitters = new CopyOnWriteArrayList<>();
     private volatile Supplier<List<RunnerSession>> dashboardSessions;
@@ -40,29 +41,42 @@ public class RunnerEventPublisher {
         return register(perRunner.computeIfAbsent(runnerId, id -> new CopyOnWriteArrayList<>()));
     }
 
+    /** Subscribes a browser tab to one conversation's events. */
+    public SseEmitter subscribeSession(String sessionId) {
+        return register(perSession.computeIfAbsent(sessionId, id -> new CopyOnWriteArrayList<>()));
+    }
+
     /** Subscribes a browser tab to dashboard runner-list updates. */
     public SseEmitter subscribeDashboard() {
         return register(dashboardSubscribers);
     }
 
     public void publishMessage(RunnerSession session, ChatMessage message) {
-        sendAll(perRunner.get(session.runner().id()), "message", fragments.message(message));
+        String html = fragments.message(message);
+        sendAll(perSession.get(session.id()), "message", html);
+        sendAll(perRunner.get(session.runner().id()), "message", html);
         publishRunnerList();
     }
 
     public void publishStatus(RunnerSession session, RunnerStatus status) {
-        sendAll(perRunner.get(session.runner().id()), "status", fragments.statusBadge(status));
+        String html = fragments.statusBadge(status);
+        sendAll(perSession.get(session.id()), "status", html);
+        sendAll(perRunner.get(session.runner().id()), "status", html);
         publishRunnerList();
     }
 
     public void publishQuestion(RunnerSession session, com.teggr.codeagent.agent.Question question) {
+        String html = fragments.pendingQuestion(session.id(), question);
+        sendAll(perSession.get(session.id()), "question", html);
         sendAll(perRunner.get(session.runner().id()), "question", fragments.pendingQuestion(session.runner().id(), question));
     }
 
     /** Pushes the real devContainerUri once the placeholder "pending" container has been replaced. */
     public void publishVscodeLink(RunnerSession session) {
         String devContainerUri = session.runner().containerLaunch().devContainerUri();
-        sendAll(perRunner.get(session.runner().id()), "vscode", fragments.vscodeLink(devContainerUri, session.isReady()));
+        String html = fragments.vscodeLink(devContainerUri, session.isReady());
+        sendAll(perSession.get(session.id()), "vscode", html);
+        sendAll(perRunner.get(session.runner().id()), "vscode", html);
     }
 
     public void publishRunnerList() {

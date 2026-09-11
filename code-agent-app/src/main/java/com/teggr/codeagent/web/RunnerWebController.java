@@ -76,6 +76,8 @@ public class RunnerWebController {
 
         ModelAndView view = new ModelAndView("runner");
         view.addObject("runnerId", runnerId);
+        view.addObject("sessionId", session.id());
+        view.addObject("sessions", runnerManager.sessions(runnerId));
         view.addObject("repoUrl", session.runner().repoUrl());
         view.addObject("status", session.status());
         view.addObject("messages", session.messages());
@@ -84,6 +86,64 @@ public class RunnerWebController {
         view.addObject("promptable", session.isReady());
         view.addObject("pendingQuestion", session.pendingQuestion());
         return view;
+    }
+
+    @PostMapping("/runners/{runnerId}/sessions")
+    public ResponseEntity<Void> createSession(@PathVariable("runnerId") String runnerId) throws Exception {
+        RunnerSession session = runnerManager.createSession(runnerId);
+        return ResponseEntity.status(303)
+                .location(URI.create("/runners/" + runnerId + "/sessions/" + session.id()))
+                .build();
+    }
+
+    @GetMapping("/runners/{runnerId}/sessions/{sessionId}")
+    public ModelAndView sessionDetail(@PathVariable("runnerId") String runnerId,
+            @PathVariable("sessionId") String sessionId) {
+        RunnerSession session = requireSession(runnerId, sessionId);
+        ModelAndView view = sessionView(runnerId, sessionId, session);
+        view.addObject("sessions", runnerManager.sessions(runnerId));
+        return view;
+    }
+
+    @PostMapping("/runners/{runnerId}/sessions/{sessionId}/prompt")
+    public ResponseEntity<Void> sendSessionPrompt(@PathVariable("runnerId") String runnerId,
+            @PathVariable("sessionId") String sessionId, @RequestParam("prompt") String prompt) {
+        RunnerSession session = requireSession(runnerId, sessionId);
+        sendPrompt(session, prompt);
+        return redirectToSession(runnerId, sessionId);
+    }
+
+    @PostMapping("/runners/{runnerId}/sessions/{sessionId}/answer")
+    public ResponseEntity<Void> answerSessionQuestion(@PathVariable("runnerId") String runnerId,
+            @PathVariable("sessionId") String sessionId, @RequestParam("questionId") String questionId,
+            @RequestParam("answer") String answer) {
+        requireSession(runnerId, sessionId).answerQuestion(questionId, answer);
+        return redirectToSession(runnerId, sessionId);
+    }
+
+    @PostMapping("/runners/{runnerId}/sessions/{sessionId}/abort")
+    public ResponseEntity<Void> abortSession(@PathVariable("runnerId") String runnerId,
+            @PathVariable("sessionId") String sessionId) throws Exception {
+        RunnerSession session = requireSession(runnerId, sessionId);
+        if (session.agentSession() != null) {
+            session.agentSession().abort();
+        }
+        return redirectToSession(runnerId, sessionId);
+    }
+
+    @PostMapping("/runners/{runnerId}/sessions/{sessionId}/remove")
+    public ResponseEntity<Void> removeSession(@PathVariable("runnerId") String runnerId,
+            @PathVariable("sessionId") String sessionId) {
+        requireSession(runnerId, sessionId);
+        runnerManager.removeSession(runnerId, sessionId);
+        return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
+    }
+
+    @GetMapping("/runners/{runnerId}/sessions/{sessionId}/events")
+    public SseEmitter sessionEvents(@PathVariable("runnerId") String runnerId,
+            @PathVariable("sessionId") String sessionId) {
+        requireSession(runnerId, sessionId);
+        return runnerManager.subscribeSession(sessionId);
     }
 
     @PostMapping("/runners/{runnerId}/prompt")
@@ -142,6 +202,27 @@ public class RunnerWebController {
         return runnerManager.subscribeDashboard();
     }
 
+    @PostMapping("/runners/{runnerId}/stop")
+    public ResponseEntity<Void> stopRunner(@PathVariable("runnerId") String runnerId) {
+        requireRunner(runnerId);
+        runnerManager.stop(runnerId);
+        return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
+    }
+
+    @PostMapping("/runners/{runnerId}/start")
+    public ResponseEntity<Void> startRunner(@PathVariable("runnerId") String runnerId) {
+        requireRunner(runnerId);
+        runnerManager.restart(runnerId);
+        return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId)).build();
+    }
+
+    @PostMapping("/runners/{runnerId}/remove")
+    public ResponseEntity<Void> removeRunner(@PathVariable("runnerId") String runnerId) {
+        requireRunner(runnerId);
+        runnerManager.remove(runnerId);
+        return ResponseEntity.status(303).location(URI.create("/")).build();
+    }
+
     @GetMapping("/ui")
     public ResponseEntity<String> ui() {
         String html = renderDashboardHtml();
@@ -194,6 +275,56 @@ public class RunnerWebController {
         sb.append("</div>")
           .append("</div></body></html>");
         return sb.toString();
+    }
+
+    private ModelAndView sessionView(String runnerId, String sessionId, RunnerSession session) {
+        ModelAndView view = new ModelAndView("runner");
+        view.addObject("runnerId", runnerId);
+        view.addObject("sessionId", sessionId);
+        view.addObject("repoUrl", session.runner().repoUrl());
+        view.addObject("status", session.status());
+        view.addObject("messages", session.messages());
+        view.addObject("devContainerUri", session.runner().containerLaunch().devContainerUri());
+        view.addObject("vscodeReady", session.isReady());
+        view.addObject("promptable", session.isReady());
+        view.addObject("pendingQuestion", session.pendingQuestion());
+        return view;
+    }
+
+    private void sendPrompt(RunnerSession session, String prompt) {
+        if (session.agentSession() == null) {
+            throw new IllegalStateException("Session " + session.id() + " has no connected agent");
+        }
+        session.addMessage("user", prompt);
+        session.setStatus(com.teggr.codeagent.runner.RunnerStatus.BUSY);
+        runnerManager.executor().submit(() -> {
+            try {
+                session.agentSession().sendPrompt(prompt);
+            } catch (Exception e) {
+                session.setStatus(com.teggr.codeagent.runner.RunnerStatus.FAILED);
+                session.addMessage("assistant", "Error: " + e.getMessage());
+            }
+        });
+    }
+
+    private ResponseEntity<Void> redirectToSession(String runnerId, String sessionId) {
+        return ResponseEntity.status(303).location(URI.create("/runners/" + runnerId + "/sessions/" + sessionId)).build();
+    }
+
+    private RunnerSession requireSession(String runnerId, String sessionId) {
+        RunnerSession session = runnerManager.getSession(runnerId, sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("No session " + sessionId + " on runner " + runnerId);
+        }
+        return session;
+    }
+
+    private RunnerSession requireRunner(String runnerId) {
+        RunnerSession session = runnerManager.getSession(runnerId);
+        if (session == null) {
+            throw new IllegalArgumentException("No active runner with id " + runnerId);
+        }
+        return session;
     }
 
     private String escapeHtml(String value) {

@@ -69,6 +69,27 @@ class RunnerManagerTest {
     }
 
     @Test
+    void createsIndependentSessionsOnTheSameRunner() throws Exception {
+        AgentHarness harness = mock(AgentHarness.class);
+        AgentSession firstAgent = mock(AgentSession.class);
+        AgentSession secondAgent = mock(AgentSession.class);
+        when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
+        when(harness.createSession()).thenReturn(firstAgent, secondAgent);
+        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+
+        Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
+        RunnerSession first = runnerManager.getSession(runner.id());
+        RunnerSession second = runnerManager.createSession(runner.id());
+
+        assertThat(second.id()).isNotEqualTo(first.id());
+        assertThat(second.runner().id()).isEqualTo(first.runner().id());
+        assertThat(second.runner().containerLaunch()).isEqualTo(first.runner().containerLaunch());
+        assertThat(second.runner().harness()).isSameAs(harness);
+        assertThat(runnerManager.sessions(runner.id())).containsExactlyInAnyOrder(first, second);
+        verify(harness, times(2)).createSession();
+    }
+
+    @Test
     void sessionErrorMarksRunnerFailedAndAddsErrorMessage() {
         AgentSession agentSession = mock(AgentSession.class);
         ArgumentCaptor<Runnable> idleListenerCaptor = ArgumentCaptor.forClass(Runnable.class);
@@ -162,6 +183,47 @@ class RunnerManagerTest {
         await(() -> session.status() == RunnerStatus.IDLE);
         verify(dockerRunnerService).restart("container-1", "/workspace/j2html-toolkit");
         assertThat(session.runner().containerLaunch().hostPort()).isEqualTo(2222);
+    }
+
+        @Test
+        void restartReconnectsEverySessionOnTheRunner() throws Exception {
+        AgentHarness harness = mock(AgentHarness.class);
+        when(dockerRunnerService.launch(anyString(), anyString()))
+            .thenReturn(new ContainerLaunch("container-1", 1111, "/workspace/j2html-toolkit"));
+        when(harness.createSession()).thenReturn(mock(AgentSession.class), mock(AgentSession.class),
+            mock(AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
+        RunnerSession sibling = runnerManager.createSession(runner.id());
+        runnerManager.stop(runner.id());
+        when(dockerRunnerService.restart("container-1", "/workspace/j2html-toolkit"))
+            .thenReturn(new ContainerLaunch("container-1", 2222, "/workspace/j2html-toolkit"));
+
+        runnerManager.restart(runner.id());
+
+        await(() -> runnerManager.sessions(runner.id()).stream()
+            .allMatch(child -> child.status() == RunnerStatus.IDLE));
+        assertThat(runnerManager.getSession(runner.id()).runner().containerLaunch().hostPort()).isEqualTo(2222);
+        assertThat(sibling.runner().containerLaunch().hostPort()).isEqualTo(2222);
+        verify(harness, times(4)).createSession();
+        }
+
+    @Test
+    void removingOneSessionKeepsItsSiblingAndRunnerAlive() throws Exception {
+        AgentHarness harness = mock(AgentHarness.class);
+        when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
+        when(harness.createSession()).thenReturn(mock(AgentSession.class), mock(AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+
+        Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
+        RunnerSession first = runnerManager.getSession(runner.id());
+        RunnerSession sibling = runnerManager.createSession(runner.id());
+
+        runnerManager.removeSession(runner.id(), first.id());
+
+        assertThat(runnerManager.getSession(runner.id())).isSameAs(sibling);
+        assertThat(runnerManager.sessions(runner.id())).containsExactly(sibling);
+        verify(dockerRunnerService, never()).remove(anyString());
     }
 
     @Test

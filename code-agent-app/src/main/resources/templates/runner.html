@@ -25,7 +25,7 @@
   </style>
 </head>
 <body>
-  <div class="shell" hx-ext="sse" th:attr="sse-connect=|/runners/${runnerId}/events|">
+  <div class="shell" hx-ext="sse" th:attr="sse-connect=|/runners/${runnerId}/sessions/${sessionId}/events|">
     <nav class="top-nav">
       <a class="button" href="/">Back to dashboard</a>
       <a class="button" id="vscode-link" sse-swap="vscode" hx-swap="outerHTML"
@@ -46,6 +46,20 @@
       <div class="row"><h2>Runner: <span th:text="${runnerId}">runner-id</span></h2></div>
       <div class="meta">Repo: <span th:text="${repoUrl}">repo-url</span></div>
       <div class="meta">Status: <span class="status" id="runner-status" sse-swap="status" hx-swap="outerHTML" th:text="${status}">IDLE</span></div>
+      <div class="row">
+        <strong>Sessions</strong>
+        <form method="post" th:action="|/runners/${runnerId}/sessions|">
+          <button class="button" type="submit">New session</button>
+        </form>
+      </div>
+      <div class="row" th:if="${sessions != null}">
+        <a class="button" th:each="candidate : ${sessions}"
+           th:href="|/runners/${runnerId}/sessions/${candidate.id}|"
+           th:text="${candidate.id == sessionId ? 'Current session' : candidate.id.substring(0, 8)}">session</a>
+        <form method="post" th:action="|/runners/${runnerId}/sessions/${sessionId}/remove|">
+          <button class="button" type="submit">Close session</button>
+        </form>
+      </div>
     </div>
 
     <div class="panel">
@@ -62,7 +76,7 @@
         <div class="row"><strong>Agent is asking:</strong></div>
         <div class="row" th:text="${pendingQuestion.prompt}">question</div>
         <form th:if="${pendingQuestion.choices != null and !#lists.isEmpty(pendingQuestion.choices)}"
-              method="post" th:action="|/runners/${runnerId}/answer|">
+              method="post" th:action="|/runners/${runnerId}/sessions/${sessionId}/answer|">
           <input type="hidden" name="questionId" th:value="${pendingQuestion.id}"/>
           <div class="row">
             <button class="button" type="submit" name="answer" th:each="choice : ${pendingQuestion.choices}"
@@ -70,7 +84,7 @@
           </div>
         </form>
         <form th:unless="${pendingQuestion.choices != null and !#lists.isEmpty(pendingQuestion.choices)}"
-              method="post" th:action="|/runners/${runnerId}/answer|">
+              method="post" th:action="|/runners/${runnerId}/sessions/${sessionId}/answer|">
           <input type="hidden" name="questionId" th:value="${pendingQuestion.id}"/>
           <div class="row">
             <input type="text" name="answer" placeholder="Your answer"/>
@@ -81,7 +95,7 @@
     </div>
 
     <div class="panel">
-      <form method="post" th:action="|/runners/${runnerId}/prompt|">
+      <form method="post" th:action="|/runners/${runnerId}/sessions/${sessionId}/prompt|">
         <div class="row">
           <textarea name="prompt" rows="5" th:disabled="${!promptable}"
                     th:placeholder="${promptable} ? 'Send a message to this runner' : 'No agent is connected to this runner'"></textarea>
@@ -89,7 +103,7 @@
         <div class="row">
           <button class="button" type="submit" th:disabled="${!promptable}">Send message</button>
           <button class="button" id="stop-button" type="submit" formmethod="post"
-                  th:formaction="|/runners/${runnerId}/abort|"
+                  th:formaction="|/runners/${runnerId}/sessions/${sessionId}/abort|"
                   th:classappend="${status.name() == 'BUSY'} ? '' : ' disabled'">Stop</button>
         </div>
       </form>

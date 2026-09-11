@@ -29,6 +29,7 @@ public class RunnerManager {
     private final AgentHarnessFactory agentHarnessFactory;
     private final RunnerEventPublisher eventPublisher;
     private final Map<String, RunnerSession> activeRunners = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, RunnerSession>> sessionsByRunner = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     public RunnerManager(DockerRunnerService dockerRunnerService, AgentHarnessFactory agentHarnessFactory,
@@ -62,8 +63,65 @@ public class RunnerManager {
         });
     }
 
+    private void registerSession(RunnerSession session) {
+        activeRunners.putIfAbsent(session.runner().id(), session);
+        sessionsByRunner.computeIfAbsent(session.runner().id(), ignored -> new ConcurrentHashMap<>())
+                .put(session.id(), session);
+    }
+
+    /** Creates a second independent conversation on an existing runner container. */
+    public RunnerSession createSession(String runnerId) throws Exception {
+        RunnerSession owner = requireSession(runnerId);
+        AgentHarness harness = owner.runner().harness();
+        if (harness == null) {
+            throw new IllegalStateException("Runner " + runnerId + " has no connected agent");
+        }
+        RunnerSession session = new RunnerSession(new Runner(runnerId, owner.runner().repoUrl(),
+                owner.runner().containerLaunch(), harness));
+        wireEvents(session);
+        session.attachAgent(harness.createSession());
+        session.setStatus(RunnerStatus.IDLE);
+        sessionsByRunner.computeIfAbsent(runnerId, ignored -> new ConcurrentHashMap<>())
+                .put(session.id(), session);
+        eventPublisher.publishRunnerList();
+        return session;
+    }
+
+    public RunnerSession getSession(String runnerId, String sessionId) {
+        Map<String, RunnerSession> sessions = sessionsByRunner.get(runnerId);
+        return sessions == null ? null : sessions.get(sessionId);
+    }
+
+    public Collection<RunnerSession> sessions(String runnerId) {
+        Map<String, RunnerSession> sessions = sessionsByRunner.get(runnerId);
+        return sessions == null ? List.of() : List.copyOf(sessions.values());
+    }
+
+    /** Removes one conversation while leaving the shared runner available to its siblings. */
+    public void removeSession(String runnerId, String sessionId) {
+        RunnerSession session = getSession(runnerId, sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("No session " + sessionId + " on runner " + runnerId);
+        }
+        Map<String, RunnerSession> sessions = sessionsByRunner.get(runnerId);
+        if (sessions.size() == 1) {
+            remove(runnerId);
+            return;
+        }
+        sessions.remove(sessionId);
+        session.detachAgent();
+        if (activeRunners.get(runnerId) == session) {
+            activeRunners.put(runnerId, sessions.values().iterator().next());
+        }
+        eventPublisher.publishRunnerList();
+    }
+
     public SseEmitter subscribe(String runnerId) {
         return eventPublisher.subscribe(runnerId);
+    }
+
+    public SseEmitter subscribeSession(String sessionId) {
+        return eventPublisher.subscribeSession(sessionId);
     }
 
     public SseEmitter subscribeDashboard() {
@@ -88,7 +146,7 @@ public class RunnerManager {
         wireEvents(session);
         session.attachAgent(harness.createSession());
         session.setStatus(RunnerStatus.IDLE);
-        activeRunners.put(runner.id(), session);
+        registerSession(session);
         eventPublisher.publishRunnerList();
         return runner;
     }
@@ -100,7 +158,7 @@ public class RunnerManager {
         wireEvents(session);
         session.addMessage("user", prompt);
         session.setStatus(RunnerStatus.STARTING);
-        activeRunners.put(runnerId, session);
+        registerSession(session);
         eventPublisher.publishRunnerList();
 
         executor.submit(() -> {
@@ -151,7 +209,7 @@ public class RunnerManager {
             RunnerSession session = new RunnerSession(
                     new Runner(managed.runnerId(), managed.repoUrl(), managed.launch(), null));
             wireEvents(session);
-            activeRunners.put(managed.runnerId(), session);
+                registerSession(session);
             session.setStatus(RunnerStatus.RECONNECTING);
             executor.submit(() -> reconnect(session, managed.launch(), !managed.running()));
         }
@@ -180,12 +238,15 @@ public class RunnerManager {
                     + connected.containerId() + " on host port " + connected.hostPort());
             AgentHarness harness = agentHarnessFactory.connect(connected.hostPort(),
                     () -> dockerRunnerService.verifyRunning(connected.containerId()));
-            session.setRunner(new Runner(runnerId, repoUrl, connected, harness));
-            eventPublisher.publishVscodeLink(session);
-            session.attachAgent(harness.createSession());
-            session.addMessage("system",
+                Runner connectedRunner = new Runner(runnerId, repoUrl, connected, harness);
+                for (RunnerSession child : sessions(runnerId)) {
+                child.setRunner(connectedRunner);
+                eventPublisher.publishVscodeLink(child);
+                child.attachAgent(harness.createSession());
+                child.addMessage("system",
                     "Reconnected to an existing runner; the earlier conversation is not available.");
-            session.setStatus(RunnerStatus.IDLE);
+                child.setStatus(RunnerStatus.IDLE);
+                }
         } catch (Exception e) {
             System.err.println("[runner " + runnerId + "] Reconnect failed: " + e.getMessage());
             session.setStatus(RunnerStatus.FAILED);
@@ -198,8 +259,13 @@ public class RunnerManager {
     public void stop(String runnerId) {
         RunnerSession session = requireSession(runnerId);
         closeAgent(session);
+        for (RunnerSession child : sessions(runnerId)) {
+            child.detachAgent();
+        }
         dockerRunnerService.stop(session.runner().containerLaunch().containerId());
-        session.setStatus(RunnerStatus.STOPPED);
+        for (RunnerSession child : sessions(runnerId)) {
+            child.setStatus(RunnerStatus.STOPPED);
+        }
         eventPublisher.publishRunnerList();
     }
 
@@ -209,9 +275,13 @@ public class RunnerManager {
         if (session == null) {
             throw new IllegalArgumentException("No active runner with id " + runnerId);
         }
+        List<RunnerSession> children = List.copyOf(sessions(runnerId));
+        sessionsByRunner.remove(runnerId);
         closeAgent(session);
         dockerRunnerService.remove(session.runner().containerLaunch().containerId());
-        session.setStatus(RunnerStatus.REMOVED);
+        for (RunnerSession child : children) {
+            child.setStatus(RunnerStatus.REMOVED);
+        }
         eventPublisher.publishRunnerList();
     }
 

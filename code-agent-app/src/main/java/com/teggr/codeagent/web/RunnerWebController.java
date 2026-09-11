@@ -81,6 +81,7 @@ public class RunnerWebController {
         view.addObject("messages", session.messages());
         view.addObject("devContainerUri", session.runner().containerLaunch().devContainerUri());
         view.addObject("vscodeReady", session.isReady());
+        view.addObject("promptable", session.isReady());
         view.addObject("pendingQuestion", session.pendingQuestion());
         return view;
     }

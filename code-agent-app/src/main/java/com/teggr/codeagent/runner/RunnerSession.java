@@ -1,0 +1,186 @@
+package com.teggr.codeagent.runner;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
+
+import com.teggr.codeagent.harness.HarnessHistoryEntry;
+import com.teggr.codeagent.harness.HarnessSession;
+import com.teggr.codeagent.harness.Question;
+
+public class RunnerSession {
+
+    private final String id;
+    private volatile Runner runner;
+    private final List<ChatMessage> messages = new CopyOnWriteArrayList<>();
+    private final AtomicReference<RunnerStatus> status = new AtomicReference<>(RunnerStatus.STARTING);
+    private volatile HarnessSession agentSession;
+    private volatile RunnerSessionListener listener;
+    private final Map<String, CompletableFuture<String>> pendingQuestions = new ConcurrentHashMap<>();
+    private volatile Question pendingQuestion;
+
+    public RunnerSession(Runner runner) {
+        this(UUID.randomUUID().toString(), runner);
+    }
+
+    public RunnerSession(String id, Runner runner) {
+        this.id = id;
+        this.runner = runner;
+    }
+
+    public String id() {
+        return id;
+    }
+
+    /** Registers the single listener that receives message and status events. */
+    public void setListener(RunnerSessionListener listener) {
+        this.listener = listener;
+    }
+
+    /** Attaches the agent session and registers message listeners exactly once. */
+    public void attachAgent(HarnessSession agentSession) {
+        this.agentSession = agentSession;
+        loadHistory(agentSession);
+        agentSession.onMessage(content -> addMessage("assistant", content));
+        agentSession.onIdle(() -> {
+            if (status() != RunnerStatus.FAILED) {
+                setStatus(RunnerStatus.IDLE);
+            }
+        });
+        agentSession.onError(error -> {
+            setStatus(RunnerStatus.FAILED);
+            addMessage("assistant", "Copilot error: " + error);
+        });
+        agentSession.onToolActivity(activity -> addMessage("tool", activity.summary()));
+        agentSession.onEvent(event -> addMessage("system", event.summary()));
+        agentSession.onQuestion(question -> {
+            CompletableFuture<String> future = new CompletableFuture<>();
+            pendingQuestions.put(question.id(), future);
+            pendingQuestion = question;
+            addMessage("question", question.prompt());
+            RunnerSessionListener current = listener;
+            if (current != null) {
+                current.onQuestionChange(this, question);
+            }
+            return future;
+        });
+    }
+
+    private void loadHistory(HarnessSession agentSession) {
+        if (!messages.isEmpty()) {
+            return;
+        }
+        try {
+            List<HarnessHistoryEntry> history = agentSession.history();
+            if (history == null || history.isEmpty()) {
+                return;
+            }
+            for (HarnessHistoryEntry entry : history) {
+                if (entry == null || entry.content() == null || entry.content().isBlank()) {
+                    continue;
+                }
+                messages.add(new ChatMessage(UUID.randomUUID().toString(), entry.role(), entry.content(), Instant.now()));
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading session history for runner " + runner.id() + ": " + e.getMessage());
+        }
+    }
+
+    /** Drops the agent session and anything waiting on it, leaving the runner's message history intact. */
+    public void detachAgent() {
+        this.agentSession = null;
+        this.pendingQuestion = null;
+        pendingQuestions.values().forEach(future -> future.complete(""));
+        pendingQuestions.clear();
+        Runner current = runner;
+        this.runner = new Runner(current.id(), current.repoUrl(), current.runtimeInstance(), null);
+    }
+
+    /** Completes a pending agent question with the user's answer; no-op if the question is unknown or already answered. */
+    public void answerQuestion(String questionId, String answer) {
+        CompletableFuture<String> future = pendingQuestions.remove(questionId);
+        if (future == null) {
+            return;
+        }
+        pendingQuestion = null;
+        addMessage("user", answer);
+        RunnerSessionListener current = listener;
+        if (current != null) {
+            current.onQuestionChange(this, null);
+        }
+        future.complete(answer);
+    }
+
+    public Question pendingQuestion() {
+        return pendingQuestion;
+    }
+
+    public Runner runner() {
+        return runner;
+    }
+
+
+    public void setRunner(Runner runner) {
+        this.runner = runner;
+    }
+
+    /** False until the real container/agent has connected; the placeholder devContainerUri points nowhere until then. */
+    public boolean isReady() {
+        return runner.harness() != null;
+    }
+
+    public RunnerStatus status() {
+        return status.get();
+    }
+
+    public void setStatus(RunnerStatus newStatus) {
+        RunnerStatus previous = this.status.getAndSet(newStatus);
+        RunnerSessionListener current = listener;
+        if (current != null && previous != newStatus) {
+            current.onStatusChange(this, newStatus);
+        }
+    }
+
+    public HarnessSession agentSession() {
+        return agentSession;
+    }
+
+    public void addMessage(String role, String content) {
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        if ("assistant".equals(role)) {
+            System.out.println("[runner " + runner.id() + "] Assistant message captured: " + abbreviate(content));
+        }
+        ChatMessage message = new ChatMessage(UUID.randomUUID().toString(), role, content, Instant.now());
+        this.messages.add(message);
+        RunnerSessionListener current = listener;
+        if (current != null) {
+            current.onMessage(this, message);
+        }
+    }
+
+    private static String abbreviate(String content) {
+        if (content == null) {
+            return "<null>";
+        }
+        String singleLine = content.replace('\n', ' ').replace('\r', ' ');
+        return singleLine.length() <= 200 ? singleLine : singleLine.substring(0, 200) + "...";
+    }
+
+    public List<ChatMessage> messages() {
+        return List.copyOf(messages);
+    }
+
+    public String lastMessage() {
+        if (messages.isEmpty()) {
+            return "No messages yet";
+        }
+        return messages.get(messages.size() - 1).content();
+    }
+}

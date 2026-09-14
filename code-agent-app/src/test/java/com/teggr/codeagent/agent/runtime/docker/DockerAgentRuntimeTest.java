@@ -105,6 +105,38 @@ class DockerAgentRuntimeTest {
     }
 
     @Test
+    void launchRejectsMissingGhTokenEvenForLocalWorkspace() {
+        assertThatThrownBy(() -> service.provision(localRequest()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("GH_TOKEN environment variable is not set");
+    }
+
+    @Test
+    void launchOfLocalWorkspaceSkipsGitRepoUrlAndUsesTheDefaultWorkspacePath() throws Exception {
+        DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
+        DockerAgentRuntime agentRuntime = runtime(properties, "git-token", "");
+
+        stubInfo("linux");
+
+        CreateContainerCmd createContainerCmd = mock(CreateContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
+        CreateContainerResponse createContainerResponse = mock(CreateContainerResponse.class);
+        when(createContainerResponse.getId()).thenReturn("container-1");
+        when(createContainerCmd.exec()).thenReturn(createContainerResponse);
+        when(dockerClient.createContainerCmd(any())).thenReturn(createContainerCmd);
+        when(dockerClient.startContainerCmd("container-1")).thenReturn(mock(StartContainerCmd.class));
+        stubPublishedPort("container-1", "4321");
+
+        agentRuntime.provision(localRequest());
+
+        verify(createContainerCmd).withEnv("GH_TOKEN=git-token", "COPILOT_GITHUB_TOKEN=git-token");
+        ArgumentCaptor<Map<String, String>> labels = ArgumentCaptor.forClass(Map.class);
+        verify(createContainerCmd).withLabels(labels.capture());
+        assertThat(labels.getValue())
+            .containsEntry(DockerAgentRuntime.REPO_URL_LABEL, "")
+            .containsEntry(DockerAgentRuntime.WORKSPACE_PATH_LABEL, "/workspace");
+    }
+
+    @Test
     void stopLeavesTheContainerInPlaceSoItCanBeStartedAgain() {
         StopContainerCmd stopCmd = mock(StopContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
         when(dockerClient.stopContainerCmd("container-1")).thenReturn(stopCmd);
@@ -165,6 +197,22 @@ class DockerAgentRuntimeTest {
         assertThat(managed.get(0).instance().workspaceAccess().uri()).contains("/workspace/withdrawals");
         assertThat(managed.get(1).running()).isFalse();
         assertThat(managed.get(1).instance().harnessPort()).isZero();
+    }
+
+    @Test
+    void discoveryReconstructsLocalWorkspaceWhenRepoUrlLabelIsBlank() {
+        Container running = managedContainer("container-1", Map.of(
+                DockerAgentRuntime.MANAGED_LABEL, "true",
+                DockerAgentRuntime.AGENT_ID_LABEL, "agent-1",
+                DockerAgentRuntime.REPO_URL_LABEL, "",
+                DockerAgentRuntime.WORKSPACE_PATH_LABEL, "/workspace"));
+        stubListContainers(running);
+        stubInspect("container-1", true, "51000");
+
+        List<DiscoveredAgent> managed = service.discover();
+
+        assertThat(managed).extracting(DiscoveredAgent::workspace)
+                .containsExactly(new com.teggr.codeagent.agent.LocalWorkspace());
     }
 
     @Test
@@ -306,6 +354,10 @@ class DockerAgentRuntimeTest {
     private AgentRuntimeRequest request() {
         return new AgentRuntimeRequest("agent-1",
                 new GitRepositoryWorkspace("https://github.com/fanduel/withdrawals"));
+    }
+
+    private AgentRuntimeRequest localRequest() {
+        return new AgentRuntimeRequest("agent-1", new com.teggr.codeagent.agent.LocalWorkspace());
     }
 
     private DockerAgentRuntime runtime(DockerAgentRuntimeProperties runtimeProperties,

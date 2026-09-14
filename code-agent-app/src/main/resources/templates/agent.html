@@ -43,7 +43,7 @@
 
     <div class="panel">
       <h2>Agent: <span th:text="${agentId}">agent-id</span></h2>
-      <div class="meta">Repository: <span th:text="${repositoryUrl}">repository-url</span></div>
+      <div class="meta">Repository: <span th:text="${repositoryUrl != null ? repositoryUrl : 'None (empty workspace)'}">repository-url</span></div>
       <div class="meta">Agent status: <span class="status" th:text="${agentStatus}">RUNNING</span></div>
       <div class="meta" th:if="${conversationId != null}">Conversation status:
         <span class="status" id="conversation-status" sse-swap="conversationStatus" hx-swap="outerHTML"

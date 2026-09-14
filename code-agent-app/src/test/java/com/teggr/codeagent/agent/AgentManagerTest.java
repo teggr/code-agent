@@ -187,6 +187,23 @@ class AgentManagerTest {
     }
 
     @Test
+    void startLocalAsyncProvisionsLocalWorkspaceAndSendsPrompt() throws Exception {
+        AgentHarness harness = harness();
+        HarnessSession session = mock(HarnessSession.class);
+        when(harness.createSession(anyString())).thenReturn(session);
+        when(agentRuntime.provision(any())).thenReturn(runtime("container-1", 1111));
+        when(harnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
+
+        AgentConversation conversation = manager.startLocalAsync("Set up a new project");
+
+        await(() -> conversation.status() == AgentConversationStatus.BUSY);
+        assertThat(conversation.agent().workspace()).isEqualTo(new LocalWorkspace());
+        verify(agentRuntime).provision(org.mockito.ArgumentMatchers
+                .argThat(request -> request.workspace() instanceof LocalWorkspace));
+        verify(session).sendPrompt("Set up a new project");
+    }
+
+    @Test
     void deletingAgentClosesConnectionDeletesRuntimeAndRemovesAgent() throws Exception {
         AgentHarness harness = harness();
         when(agentRuntime.provision(any())).thenReturn(runtime("container-1", 1111));

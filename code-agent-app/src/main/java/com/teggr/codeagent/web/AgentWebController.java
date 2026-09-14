@@ -62,10 +62,21 @@ public class AgentWebController {
         return new ModelAndView("fragments :: repositoryPicker");
     }
 
+    @GetMapping("/repositories/empty-selection")
+    public ModelAndView emptyWorkspaceSelection() {
+        ModelAndView view = new ModelAndView("fragments :: repositoryPicker");
+        view.addObject("emptyWorkspaceSelected", true);
+        return view;
+    }
+
     @PostMapping("/agents")
-    public ResponseEntity<Void> startAgent(@RequestParam("repoUrl") String repoUrl,
+    public ResponseEntity<Void> startAgent(@RequestParam(value = "repoUrl", required = false, defaultValue = "") String repoUrl,
             @RequestParam("prompt") String prompt) {
-        agentManager.startAsync(repoUrl, prompt);
+        if (repoUrl.isBlank()) {
+            agentManager.startLocalAsync(prompt);
+        } else {
+            agentManager.startAsync(repoUrl, prompt);
+        }
         return redirect("/");
     }
 
@@ -190,7 +201,7 @@ public class AgentWebController {
         view.addObject("agentId", agent.id());
         view.addObject("conversationId", null);
         view.addObject("conversations", agentManager.conversations(agent.id()));
-        view.addObject("repositoryUrl", ((GitRepositoryWorkspace) agent.workspace()).repositoryUrl());
+        view.addObject("repositoryUrl", agent.workspace() instanceof GitRepositoryWorkspace grw ? grw.repositoryUrl() : null);
         view.addObject("agentStatus", agent.status());
         view.addObject("conversationStatus", null);
         view.addObject("messages", java.util.List.of());

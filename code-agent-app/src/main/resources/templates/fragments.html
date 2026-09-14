@@ -3,13 +3,20 @@
 <body>
 
   <div th:fragment="repositoryPicker" id="repository-picker">
-    <div th:if="${selectedRepositoryUrl != null}" class="row">
+    <div th:if="${emptyWorkspaceSelected != null}" class="row">
+      <span class="meta">No repository selected — the agent will start with an empty workspace.</span>
+      <button class="button" type="button" hx-get="/repositories/picker" hx-target="#repository-picker"
+              hx-swap="outerHTML">Choose a repository instead</button>
+    </div>
+    <div th:if="${emptyWorkspaceSelected == null and selectedRepositoryUrl != null}" class="row">
       <input type="hidden" name="repoUrl" th:value="${selectedRepositoryUrl}"/>
       <span th:text="${selectedRepositoryName}">owner/repository</span>
             <button class="button" type="button" hx-get="/repositories/picker" hx-target="#repository-picker"
               hx-swap="outerHTML">Change</button>
+            <a href="#" hx-get="/repositories/empty-selection" hx-target="#repository-picker"
+               hx-swap="outerHTML">Start without a repository</a>
     </div>
-    <div th:unless="${selectedRepositoryUrl != null}">
+    <div th:if="${emptyWorkspaceSelected == null and selectedRepositoryUrl == null}">
       <div class="row">
          <input type="search" name="query" placeholder="Search repositories" autocomplete="off"
            onkeydown="if (event.key === 'Enter') event.preventDefault();"
@@ -17,6 +24,10 @@
                hx-swap="innerHTML"/>
       </div>
       <div id="repository-results"></div>
+      <div class="row">
+        <a href="#" hx-get="/repositories/empty-selection" hx-target="#repository-picker"
+           hx-swap="outerHTML">Start without a repository</a>
+      </div>
     </div>
   </div>
 
@@ -85,7 +96,7 @@
       <div class="card" th:each="agent : ${agents}">
         <div>
           <div><strong>Agent:</strong> <span th:text="${agent.id}">agent-id</span></div>
-          <div class="meta">Repository: <span th:text="${agent.workspace.repositoryUrl}">repository-url</span></div>
+          <div class="meta">Repository: <span th:text="${agent.workspace instanceof T(com.teggr.codeagent.agent.GitRepositoryWorkspace) ? agent.workspace.repositoryUrl : 'None (empty workspace)'}">repository-url</span></div>
         </div>
         <div class="row">
           <span class="status" th:text="${agent.status}">RUNNING</span>

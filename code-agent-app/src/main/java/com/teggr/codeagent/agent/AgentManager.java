@@ -72,9 +72,16 @@ public class AgentManager {
     }
 
     public AgentConversation startAsync(String repositoryUrl, String prompt) {
+        return startAsync(new GitRepositoryWorkspace(repositoryUrl), prompt);
+    }
+
+    public AgentConversation startLocalAsync(String prompt) {
+        return startAsync(new LocalWorkspace(), prompt);
+    }
+
+    private AgentConversation startAsync(WorkspaceSpec workspace, String prompt) {
         String agentId = UUID.randomUUID().toString();
-        Agent agent = new Agent(agentId, new GitRepositoryWorkspace(repositoryUrl), null, null,
-                AgentStatus.PROVISIONING);
+        Agent agent = new Agent(agentId, workspace, null, null, AgentStatus.PROVISIONING);
         AgentConversation conversation = new AgentConversation(agent);
         wireEvents(conversation);
         conversation.addMessage("user", prompt);

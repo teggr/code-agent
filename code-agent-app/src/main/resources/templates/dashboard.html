@@ -24,7 +24,7 @@
   <div class="shell" hx-ext="sse" sse-connect="/agents/events">
     <div class="panel">
       <h2>Start a new agent</h2>
-      <form method="post" action="/agents">
+      <form method="post" action="/agents" onsubmit="return confirmEmptyWorkspaceStart(this)">
         <div th:replace="~{fragments :: repositoryPicker}"></div>
         <div class="row">
           <textarea name="prompt" rows="5" placeholder="Describe the task you want the agent to run"></textarea>
@@ -42,5 +42,15 @@
       </div>
     </div>
   </div>
+  <script>
+    // No repoUrl input means the agent would start with an empty workspace; confirm to avoid an accidental click.
+    function confirmEmptyWorkspaceStart(form) {
+      var repoUrl = form.querySelector('input[name="repoUrl"]');
+      if (repoUrl && repoUrl.value) {
+        return true;
+      }
+      return confirm("Start an agent with no repository selected (empty workspace)?");
+    }
+  </script>
 </body>
 </html>

@@ -81,6 +81,26 @@ class AgentWebControllerTest {
     }
 
     @Test
+    void startingAgentWithBlankRepoUrlStartsLocalWorkspace() {
+        AgentManager manager = mock(AgentManager.class);
+
+        ResponseEntity<Void> response = controller(manager).startAgent("", "Set up a new project");
+
+        verify(manager).startLocalAsync("Set up a new project");
+        assertRedirect(response, "/");
+    }
+
+    @Test
+    void emptyWorkspaceSelectionRendersPickerInEmptyState() {
+        AgentWebController controller = controller(mock(AgentManager.class));
+
+        ModelAndView view = controller.emptyWorkspaceSelection();
+
+        assertThat(view.getViewName()).isEqualTo("fragments :: repositoryPicker");
+        assertThat(view.getModel()).containsEntry("emptyWorkspaceSelected", true);
+    }
+
+    @Test
     void agentDetailWithoutConversationUsesCanonicalStatusSplit() {
         AgentManager manager = mock(AgentManager.class);
         Agent agent = agent(AgentStatus.STOPPED, null);
@@ -95,6 +115,22 @@ class AgentWebControllerTest {
                 .containsEntry("conversationStatus", null)
                 .containsEntry("conversationId", null)
                 .containsEntry("repositoryUrl", repositoryUrl());
+    }
+
+    @Test
+    void agentDetailForLocalWorkspaceAgentHasNullRepositoryUrl() {
+        AgentManager manager = mock(AgentManager.class);
+        AgentRuntimeInstance runtime = new AgentRuntimeInstance("container-1", 4321, "/workspace",
+                new WorkspaceAccess("vscode://workspace", "code --new-window"));
+        Agent agent = new Agent("agent-1", new com.teggr.codeagent.agent.LocalWorkspace(), runtime, null,
+                AgentStatus.STOPPED);
+        when(manager.get("agent-1")).thenReturn(agent);
+        when(manager.getConversation("agent-1")).thenReturn(null);
+        when(manager.conversations("agent-1")).thenReturn(List.of());
+
+        ModelAndView view = controller(manager).agentDetail("agent-1");
+
+        assertThat(view.getModel()).containsEntry("repositoryUrl", null);
     }
 
     @Test

@@ -24,6 +24,8 @@ import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Volume;
 import com.teggr.codeagent.agent.GitRepositoryWorkspace;
 import com.teggr.codeagent.agent.GitRepositoryWorkspaceProperties;
+import com.teggr.codeagent.agent.LocalWorkspace;
+import com.teggr.codeagent.agent.WorkspaceSpec;
 import com.teggr.codeagent.agent.runtime.AgentRuntime;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeRequest;
@@ -67,11 +69,12 @@ public class DockerAgentRuntime implements AgentRuntime {
 
     @Override
     public AgentRuntimeInstance provision(AgentRuntimeRequest request) throws Exception {
-        if (!(request.workspace() instanceof GitRepositoryWorkspace workspace)) {
-            throw new IllegalArgumentException("Docker runtime does not support workspace type "
+        String gitRepoUrl = switch (request.workspace()) {
+            case GitRepositoryWorkspace workspace -> workspace.repositoryUrl();
+            case LocalWorkspace() -> "";
+            default -> throw new IllegalArgumentException("Docker runtime does not support workspace type "
                     + request.workspace().getClass().getName());
-        }
-        String gitRepoUrl = workspace.repositoryUrl();
+        };
         String agentId = request.agentId();
         String image = properties.getImage();
         String gitToken = gitProperties.getToken();
@@ -90,7 +93,13 @@ public class DockerAgentRuntime implements AgentRuntime {
             Bind dockerSocketBind = resolveDockerSocketBind();
             System.out.println("Mounting Docker socket into agent runtime: " + dockerSocketBind);
 
-            String workspacePath = workspacePath(gitRepoUrl);
+            String workspacePath = gitRepoUrl.isEmpty() ? "/workspace" : workspacePath(gitRepoUrl);
+
+            List<String> env = new ArrayList<>(List.of("GH_TOKEN=" + gitToken,
+                "COPILOT_GITHUB_TOKEN=" + copilotToken));
+            if (!gitRepoUrl.isEmpty()) {
+                env.add("GIT_REPO_URL=" + gitRepoUrl);
+            }
 
             CreateContainerResponse container = dockerClient.createContainerCmd(image)
                 .withExposedPorts(exposedPort)
@@ -103,9 +112,7 @@ public class DockerAgentRuntime implements AgentRuntime {
                     REPO_URL_LABEL, gitRepoUrl,
                     WORKSPACE_PATH_LABEL, workspacePath,
                     CREATED_AT_LABEL, Instant.now().toString()))
-                .withEnv("GH_TOKEN=" + gitToken,
-                    "COPILOT_GITHUB_TOKEN=" + copilotToken,
-                    "GIT_REPO_URL=" + gitRepoUrl)
+                .withEnv(env.toArray(new String[0]))
                 .exec();
 
             String containerId = container.getId();
@@ -247,9 +254,10 @@ public class DockerAgentRuntime implements AgentRuntime {
         boolean running = Boolean.TRUE.equals(inspect.getState().getRunning());
         String workspacePath = labels.getOrDefault(WORKSPACE_PATH_LABEL, "/workspace");
         String repoUrl = labels.getOrDefault(REPO_URL_LABEL, "");
+        WorkspaceSpec workspace = repoUrl.isBlank() ? new LocalWorkspace() : new GitRepositoryWorkspace(repoUrl);
         // Docker assigns a new host port whenever it restarts the container, so it is never remembered.
         int hostPort = running ? getAllocatedHostPort(inspect, ExposedPort.tcp(AGENT_PORT)) : 0;
-        return new DiscoveredAgent(agentId, new GitRepositoryWorkspace(repoUrl),
+        return new DiscoveredAgent(agentId, workspace,
             runtimeInstance(containerId, hostPort, workspacePath), running);
     }
 

@@ -39,8 +39,8 @@ class RunnerManagerTest {
             .thenReturn(new ContainerLaunch("container-1", 1111))
             .thenReturn(new ContainerLaunch("container-2", 2222));
         AgentHarness harness = mock(AgentHarness.class);
-        when(harness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        when(harness.createSession(anyString())).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
 
         Runner first = runnerManager.start(repoUrl);
         Runner second = runnerManager.start(repoUrl);
@@ -58,8 +58,8 @@ class RunnerManagerTest {
         String prompt = "List the README headings";
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(eq(repoUrl), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
-        when(harness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        when(harness.createSession(anyString())).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
 
         RunnerSession session = runnerManager.start(repoUrl, prompt);
 
@@ -74,8 +74,8 @@ class RunnerManagerTest {
         AgentSession firstAgent = mock(AgentSession.class);
         AgentSession secondAgent = mock(AgentSession.class);
         when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
-        when(harness.createSession()).thenReturn(firstAgent, secondAgent);
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        when(harness.createSession(anyString())).thenReturn(firstAgent, secondAgent);
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
 
         Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
         RunnerSession first = runnerManager.getSession(runner.id());
@@ -86,7 +86,7 @@ class RunnerManagerTest {
         assertThat(second.runner().containerLaunch()).isEqualTo(first.runner().containerLaunch());
         assertThat(second.runner().harness()).isSameAs(harness);
         assertThat(runnerManager.sessions(runner.id())).containsExactlyInAnyOrder(first, second);
-        verify(harness, times(2)).createSession();
+        verify(harness, times(2)).createSession(anyString());
     }
 
     @Test
@@ -135,8 +135,8 @@ class RunnerManagerTest {
     void stopClosesTheAgentAndTheContainerButKeepsTheRunner() throws Exception {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
-        when(harness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        when(harness.createSession(anyString())).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
 
         Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
         runnerManager.stop(runner.id());
@@ -154,8 +154,8 @@ class RunnerManagerTest {
     void removeDeletesTheContainerAndForgetsTheRunner() throws Exception {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
-        when(harness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        when(harness.createSession(anyString())).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
 
         Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
         runnerManager.remove(runner.id());
@@ -166,12 +166,15 @@ class RunnerManagerTest {
     }
 
     @Test
-    void startBringsAStoppedRunnerBackWithANewAgentSession() throws Exception {
+    void startBringsAStoppedRunnerBackWithAResumedAgentSession() throws Exception {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(anyString(), anyString()))
             .thenReturn(new ContainerLaunch("container-1", 1111, "/workspace/j2html-toolkit"));
-        when(harness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        AgentSession created = mock(com.teggr.codeagent.agent.AgentSession.class);
+        AgentSession resumed = mock(com.teggr.codeagent.agent.AgentSession.class);
+        when(harness.createSession(anyString())).thenReturn(created);
+        when(harness.resumeSession(anyString())).thenReturn(resumed);
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
         Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
         runnerManager.stop(runner.id());
         when(dockerRunnerService.restart("container-1", "/workspace/j2html-toolkit"))
@@ -182,6 +185,7 @@ class RunnerManagerTest {
         RunnerSession session = runnerManager.getSession(runner.id());
         await(() -> session.status() == RunnerStatus.IDLE);
         verify(dockerRunnerService).restart("container-1", "/workspace/j2html-toolkit");
+        verify(harness).resumeSession(session.id());
         assertThat(session.runner().containerLaunch().hostPort()).isEqualTo(2222);
     }
 
@@ -190,9 +194,9 @@ class RunnerManagerTest {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(anyString(), anyString()))
             .thenReturn(new ContainerLaunch("container-1", 1111, "/workspace/j2html-toolkit"));
-        when(harness.createSession()).thenReturn(mock(AgentSession.class), mock(AgentSession.class),
-            mock(AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        when(harness.createSession(anyString())).thenReturn(mock(AgentSession.class), mock(AgentSession.class));
+        when(harness.resumeSession(anyString())).thenReturn(mock(AgentSession.class), mock(AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
         Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
         RunnerSession sibling = runnerManager.createSession(runner.id());
         runnerManager.stop(runner.id());
@@ -205,15 +209,16 @@ class RunnerManagerTest {
             .allMatch(child -> child.status() == RunnerStatus.IDLE));
         assertThat(runnerManager.getSession(runner.id()).runner().containerLaunch().hostPort()).isEqualTo(2222);
         assertThat(sibling.runner().containerLaunch().hostPort()).isEqualTo(2222);
-        verify(harness, times(4)).createSession();
+        verify(harness, times(2)).createSession(anyString());
+        verify(harness, times(2)).resumeSession(anyString());
         }
 
     @Test
     void removingOneSessionKeepsItsSiblingAndRunnerAlive() throws Exception {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
-        when(harness.createSession()).thenReturn(mock(AgentSession.class), mock(AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        when(harness.createSession(anyString())).thenReturn(mock(AgentSession.class), mock(AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
 
         Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
         RunnerSession first = runnerManager.getSession(runner.id());
@@ -231,12 +236,12 @@ class RunnerManagerTest {
         AgentHarness failingHarness = mock(AgentHarness.class);
         AgentHarness healthyHarness = mock(AgentHarness.class);
         doThrow(new RuntimeException("boom")).when(failingHarness).close();
-        when(failingHarness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
-        when(healthyHarness.createSession()).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
+        when(failingHarness.createSession(anyString())).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
+        when(healthyHarness.createSession(anyString())).thenReturn(mock(com.teggr.codeagent.agent.AgentSession.class));
         when(dockerRunnerService.launch(anyString(), anyString()))
             .thenReturn(new ContainerLaunch("container-1", 1111))
             .thenReturn(new ContainerLaunch("container-2", 2222));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(failingHarness).thenReturn(healthyHarness);
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(failingHarness).thenReturn(healthyHarness);
 
         runnerManager.start("https://github.com/teggr/j2html-toolkit");
         runnerManager.start("https://github.com/teggr/j2html-toolkit");
@@ -252,18 +257,22 @@ class RunnerManagerTest {
     @Test
     void adoptExistingReconnectsARunningContainerUnderItsOriginalRunnerId() throws Exception {
         AgentHarness harness = mock(AgentHarness.class);
-        when(harness.createSession()).thenReturn(mock(AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        AgentSession resumed = mock(AgentSession.class);
+        when(harness.listSessionIds()).thenReturn(List.of("session-1"));
+        when(harness.resumeSession("session-1")).thenReturn(resumed);
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
         when(dockerRunnerService.listManaged()).thenReturn(List.of(new ManagedContainer("runner-1",
                 "https://github.com/teggr/j2html-toolkit", new ContainerLaunch("container-1", 1111), true)));
 
         runnerManager.adoptExisting();
 
+        await(() -> runnerManager.getSession("runner-1") != null
+                && runnerManager.getSession("runner-1").status() == RunnerStatus.IDLE);
         RunnerSession session = runnerManager.getSession("runner-1");
         assertThat(session).isNotNull();
-        await(() -> session.status() == RunnerStatus.IDLE);
         assertThat(session.runner().harness()).isSameAs(harness);
         assertThat(session.runner().repoUrl()).isEqualTo("https://github.com/teggr/j2html-toolkit");
+        assertThat(session.id()).isEqualTo("session-1");
         verify(dockerRunnerService, never()).restart(anyString(), anyString());
         verify(dockerRunnerService, never()).launch(anyString(), anyString());
     }
@@ -271,8 +280,9 @@ class RunnerManagerTest {
     @Test
     void adoptExistingStartsAStoppedContainerBeforeConnecting() throws Exception {
         AgentHarness harness = mock(AgentHarness.class);
-        when(harness.createSession()).thenReturn(mock(AgentSession.class));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenReturn(harness);
+        when(harness.listSessionIds()).thenReturn(List.of("session-1"));
+        when(harness.resumeSession("session-1")).thenReturn(mock(AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
         when(dockerRunnerService.listManaged()).thenReturn(List.of(new ManagedContainer("runner-1",
                 "https://github.com/teggr/j2html-toolkit",
                 new ContainerLaunch("container-1", 0, "/workspace/j2html-toolkit"), false)));
@@ -281,10 +291,29 @@ class RunnerManagerTest {
 
         runnerManager.adoptExisting();
 
+        await(() -> runnerManager.getSession("runner-1") != null
+                && runnerManager.getSession("runner-1").status() == RunnerStatus.IDLE);
         RunnerSession session = runnerManager.getSession("runner-1");
-        await(() -> session.status() == RunnerStatus.IDLE);
         verify(dockerRunnerService).restart("container-1", "/workspace/j2html-toolkit");
         assertThat(session.runner().containerLaunch().hostPort()).isEqualTo(3333);
+    }
+
+    @Test
+    void adoptExistingRestoresEveryPersistedSessionForTheRunner() throws Exception {
+        AgentHarness harness = mock(AgentHarness.class);
+        when(harness.listSessionIds()).thenReturn(List.of("session-1", "session-2"));
+        when(harness.resumeSession(anyString())).thenReturn(mock(AgentSession.class), mock(AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
+        when(dockerRunnerService.listManaged()).thenReturn(List.of(new ManagedContainer("runner-1",
+                "https://github.com/teggr/j2html-toolkit",
+                new ContainerLaunch("container-1", 1111, "/workspace/j2html-toolkit"), true)));
+
+        runnerManager.adoptExisting();
+
+        await(() -> runnerManager.sessions("runner-1").size() == 2);
+        assertThat(runnerManager.sessions("runner-1")).extracting(RunnerSession::id)
+                .containsExactlyInAnyOrder("session-1", "session-2");
+        verify(harness, times(2)).resumeSession(anyString());
     }
 
     private static void await(java.util.function.BooleanSupplier condition) throws InterruptedException {
@@ -298,7 +327,7 @@ class RunnerManagerTest {
     @Test
     void startStopsContainerWhenHarnessConnectFails() throws Exception {
         when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
-        when(agentHarnessFactory.connect(anyInt(), any())).thenThrow(new RuntimeException("connect failed"));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenThrow(new RuntimeException("connect failed"));
 
         try {
             runnerManager.start("https://github.com/teggr/j2html-toolkit");

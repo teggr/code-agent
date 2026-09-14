@@ -1,5 +1,6 @@
 package com.teggr.codeagent.agent;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -11,6 +12,8 @@ import java.util.function.Function;
  * otherwise be missed.
  */
 public interface AgentSession {
+
+    List<AgentHistoryEntry> history() throws Exception;
 
     void sendPrompt(String prompt) throws Exception;
 

@@ -214,6 +214,30 @@ class RunnerManagerTest {
         }
 
     @Test
+    void restartKeepsFailedConversationWithoutReplacingItsAgentSession() throws Exception {
+        AgentHarness harness = mock(AgentHarness.class);
+        when(dockerRunnerService.launch(anyString(), anyString()))
+            .thenReturn(new ContainerLaunch("container-1", 1111, "/workspace/j2html-toolkit"));
+        when(harness.createSession(anyString())).thenReturn(mock(AgentSession.class), mock(AgentSession.class));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
+        Runner runner = runnerManager.start("https://github.com/teggr/j2html-toolkit");
+        RunnerSession first = runnerManager.getSession(runner.id());
+        RunnerSession sibling = runnerManager.createSession(runner.id());
+        runnerManager.stop(runner.id());
+        when(dockerRunnerService.restart("container-1", "/workspace/j2html-toolkit"))
+            .thenReturn(new ContainerLaunch("container-1", 2222, "/workspace/j2html-toolkit"));
+        when(harness.resumeSession(first.id())).thenThrow(new RuntimeException("session unavailable"));
+        when(harness.resumeSession(sibling.id())).thenReturn(mock(AgentSession.class));
+
+        runnerManager.restart(runner.id());
+
+        await(() -> first.status() == RunnerStatus.FAILED && sibling.status() == RunnerStatus.IDLE);
+        assertThat(first.agentSession()).isNull();
+        assertThat(sibling.agentSession()).isNotNull();
+        verify(harness, times(2)).createSession(anyString());
+    }
+
+    @Test
     void removingOneSessionKeepsItsSiblingAndRunnerAlive() throws Exception {
         AgentHarness harness = mock(AgentHarness.class);
         when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
@@ -316,6 +340,26 @@ class RunnerManagerTest {
         verify(harness, times(2)).resumeSession(anyString());
     }
 
+    @Test
+    void adoptExistingCreatesOneConversationWhenNoPersistedSessionsExist() throws Exception {
+        AgentHarness harness = mock(AgentHarness.class);
+        AgentSession created = mock(AgentSession.class);
+        when(harness.listSessionIds()).thenReturn(List.of());
+        when(harness.createSession(anyString())).thenReturn(created);
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenReturn(harness);
+        when(dockerRunnerService.listManaged()).thenReturn(List.of(new ManagedContainer("runner-1",
+                "https://github.com/teggr/j2html-toolkit",
+                new ContainerLaunch("container-1", 1111, "/workspace/j2html-toolkit"), true)));
+
+        runnerManager.adoptExisting();
+
+        await(() -> runnerManager.sessions("runner-1").size() == 1);
+        RunnerSession conversation = runnerManager.sessions("runner-1").iterator().next();
+        verify(harness).createSession(conversation.id());
+        verify(harness, never()).resumeSession(anyString());
+        assertThat(conversation.status()).isEqualTo(RunnerStatus.IDLE);
+    }
+
     private static void await(java.util.function.BooleanSupplier condition) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5000;
         while (!condition.getAsBoolean() && System.currentTimeMillis() < deadline) {
@@ -337,6 +381,17 @@ class RunnerManagerTest {
 
         verify(dockerRunnerService, times(1)).remove("container-1");
         assertThat(runnerManager.list()).isEmpty();
+    }
+
+    @Test
+    void startAsyncRemovesContainerWhenHarnessConnectFails() throws Exception {
+        when(dockerRunnerService.launch(anyString(), anyString())).thenReturn(new ContainerLaunch("container-1", 1111));
+        when(agentHarnessFactory.connect(anyInt(), anyString(), any())).thenThrow(new RuntimeException("connect failed"));
+
+        RunnerSession session = runnerManager.startAsync("https://github.com/teggr/j2html-toolkit", "Inspect the project");
+
+        await(() -> session.status() == RunnerStatus.FAILED);
+        verify(dockerRunnerService).remove("container-1");
     }
 
 }

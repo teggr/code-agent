@@ -163,15 +163,18 @@ public class RunnerManager {
         eventPublisher.publishRunnerList();
 
         executor.submit(() -> {
+            ContainerLaunch containerLaunch = null;
+            AgentHarness harness = null;
             try {
                 System.out.println("[runner " + runnerId + "] Launching container for " + repoUrl);
-                ContainerLaunch containerLaunch = dockerRunnerService.launch(repoUrl, runnerId);
-                System.out.println("[runner " + runnerId + "] Container " + containerLaunch.containerId()
-                        + " on host port " + containerLaunch.hostPort() + "; connecting agent");
-                AgentHarness harness = agentHarnessFactory.connect(containerLaunch.hostPort(),
-                        containerLaunch.workspacePath(),
-                        () -> dockerRunnerService.verifyRunning(containerLaunch.containerId()));
-                Runner startedRunner = new Runner(runnerId, repoUrl, containerLaunch, harness);
+                ContainerLaunch launched = dockerRunnerService.launch(repoUrl, runnerId);
+                containerLaunch = launched;
+                System.out.println("[runner " + runnerId + "] Container " + launched.containerId()
+                        + " on host port " + launched.hostPort() + "; connecting agent");
+                harness = agentHarnessFactory.connect(launched.hostPort(),
+                        launched.workspacePath(),
+                        () -> dockerRunnerService.verifyRunning(launched.containerId()));
+                Runner startedRunner = new Runner(runnerId, repoUrl, launched, harness);
                 session.setRunner(startedRunner);
                 eventPublisher.publishVscodeLink(session);
                 session.attachAgent(harness.createSession(session.id()));
@@ -182,12 +185,28 @@ public class RunnerManager {
             } catch (Exception e) {
                 System.err.println("[runner " + runnerId + "] Failed: " + e.getMessage());
                 e.printStackTrace();
+                closeAfterFailedStart(harness, runnerId);
+                if (containerLaunch != null) {
+                    dockerRunnerService.remove(containerLaunch.containerId());
+                }
                 session.setStatus(RunnerStatus.FAILED);
                 session.addMessage("assistant", "Error starting runner: " + e.getMessage());
             }
         });
 
         return session;
+    }
+
+    private void closeAfterFailedStart(AgentHarness harness, String runnerId) {
+        if (harness == null) {
+            return;
+        }
+        try {
+            harness.close();
+        } catch (Exception e) {
+            System.err.println("Error closing agent harness after runner " + runnerId
+                    + " failed to start: " + e.getMessage());
+        }
     }
 
     public RunnerSession start(String repoUrl, String prompt) throws Exception {
@@ -239,8 +258,9 @@ public class RunnerManager {
             for (RunnerSession child : sessions(runnerId)) {
                 child.setRunner(connectedRunner);
                 eventPublisher.publishVscodeLink(child);
-                reconnectChildSession(harness, child);
-                child.setStatus(RunnerStatus.IDLE);
+                if (reconnectChildSession(harness, child)) {
+                    child.setStatus(RunnerStatus.IDLE);
+                }
             }
         } catch (Exception e) {
             System.err.println("[runner " + runnerId + "] Reconnect failed: " + e.getMessage());
@@ -283,15 +303,16 @@ public class RunnerManager {
         eventPublisher.publishRunnerList();
     }
 
-    private void reconnectChildSession(AgentHarness harness, RunnerSession child) throws Exception {
+    private boolean reconnectChildSession(AgentHarness harness, RunnerSession child) {
         try {
             child.attachAgent(harness.resumeSession(child.id()));
+            return true;
         } catch (Exception e) {
             System.err.println("[runner " + child.runner().id() + "] Unable to resume session " + child.id()
-                    + "; creating a new one: " + e.getMessage());
-            child.attachAgent(harness.createSession(child.id()));
-            child.addMessage("system",
-                    "Reconnected to an existing runner, but the earlier session could not be resumed.");
+                    + ": " + e.getMessage());
+            child.setStatus(RunnerStatus.FAILED);
+            child.addMessage("system", "The earlier session could not be resumed.");
+            return false;
         }
     }
 

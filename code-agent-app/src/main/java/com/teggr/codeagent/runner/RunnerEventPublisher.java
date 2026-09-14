@@ -10,6 +10,8 @@ import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import com.teggr.codeagent.agent.ChatMessage;
+
 /**
  * Fans runner session events out to browser SSE streams as rendered HTML fragments
  * (consumed by htmx's SSE extension). A dead emitter is dropped silently so one

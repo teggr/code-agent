@@ -1,5 +1,6 @@
 package com.teggr.codeagent.runner;
 
+import com.teggr.codeagent.agent.ChatMessage;
 import com.teggr.codeagent.harness.Question;
 
 /** Receives lifecycle events from a {@link RunnerSession}. */

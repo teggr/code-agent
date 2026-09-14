@@ -6,8 +6,10 @@ import org.springframework.stereotype.Component;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
+import com.teggr.codeagent.agent.ChatMessage;
+
 /** Renders small Thymeleaf fragments for SSE pushes, reusing the same markup as the full pages. */
-@Component
+@Component("runnerFragmentRenderer")
 public class FragmentRenderer {
 
     private final TemplateEngine templateEngine;

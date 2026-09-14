@@ -15,13 +15,14 @@ import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import com.teggr.codeagent.harness.AgentHarness;
-import com.teggr.codeagent.harness.AgentHarnessFactory;
+import com.teggr.codeagent.agent.ChatMessage;
 import com.teggr.codeagent.agent.GitRepositoryWorkspace;
 import com.teggr.codeagent.agent.runtime.AgentRuntime;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeRequest;
 import com.teggr.codeagent.agent.runtime.DiscoveredAgent;
+import com.teggr.codeagent.harness.AgentHarness;
+import com.teggr.codeagent.harness.AgentHarnessFactory;
 
 /** Tracks the set of active runners, allowing multiple runners per repository. */
 @Service

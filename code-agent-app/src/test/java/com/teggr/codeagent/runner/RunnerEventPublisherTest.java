@@ -2,7 +2,6 @@ package com.teggr.codeagent.runner;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import com.teggr.codeagent.agent.ChatMessage;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
 import com.teggr.codeagent.agent.runtime.WorkspaceAccess;
 

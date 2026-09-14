@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.teggr.codeagent.agent.ChatMessage;
 import com.teggr.codeagent.harness.HarnessHistoryEntry;
 import com.teggr.codeagent.harness.HarnessSession;
 import com.teggr.codeagent.harness.Question;

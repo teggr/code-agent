@@ -3,6 +3,7 @@ package com.teggr.codeagent.agent;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -64,12 +65,11 @@ public class AgentConversation {
             addMessage("assistant", "Copilot error: " + error);
         });
         session.onToolActivity(activity -> addMessage("tool", activity.summary()));
-        session.onEvent(event -> addMessage("system", event.summary()));
+        session.onEvent(event -> addMessage("system", event.summary(), event.type()));
         session.onQuestion(question -> {
             CompletableFuture<String> future = new CompletableFuture<>();
             pendingQuestions.put(question.id(), future);
             pendingQuestion = question;
-            addMessage("question", question.prompt());
             AgentConversationListener current = listener;
             if (current != null) {
                 current.onQuestionChange(this, question);
@@ -89,7 +89,7 @@ public class AgentConversation {
             }
             for (HarnessHistoryEntry entry : history) {
                 if (entry != null && entry.content() != null && !entry.content().isBlank()) {
-                    messages.add(new ChatMessage(UUID.randomUUID().toString(), entry.role(), entry.content(), Instant.now()));
+                    messages.add(ChatMessage.create(UUID.randomUUID().toString(), entry.role(), entry.content(), Instant.now(), entry.eventType()));
                 }
             }
         } catch (Exception e) {
@@ -143,10 +143,14 @@ public class AgentConversation {
     }
 
     public void addMessage(String role, String content) {
+        addMessage(role, content, null);
+    }
+
+    public void addMessage(String role, String content, String eventType) {
         if (content == null || content.isBlank()) {
             return;
         }
-        messages.add(new ChatMessage(UUID.randomUUID().toString(), role, content, Instant.now()));
+        messages.add(ChatMessage.create(UUID.randomUUID().toString(), role, content, Instant.now(), eventType));
         AgentConversationListener current = listener;
         if (current != null) {
             current.onMessage(this, messages.get(messages.size() - 1));
@@ -157,7 +161,25 @@ public class AgentConversation {
         return List.copyOf(messages);
     }
 
+    public List<ChatMessage> timelineMessages() {
+        return messages.stream().filter(message -> message.timelineVisible()).toList();
+    }
+
+    public Optional<ChatMessage> turnSummary() {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            ChatMessage message = messages.get(i);
+            if (message.turnSummary()) {
+                return Optional.of(message);
+            }
+        }
+        return Optional.empty();
+    }
+
     public String lastMessage() {
-        return messages.isEmpty() ? "No messages yet" : messages.get(messages.size() - 1).content();
+        return messages.stream()
+                .filter(message -> message.fullMessage())
+                .reduce((first, second) -> second)
+                .map(message -> message.content())
+                .orElse("No messages yet");
     }
 }

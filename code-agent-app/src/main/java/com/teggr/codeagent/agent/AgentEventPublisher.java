@@ -43,10 +43,18 @@ public class AgentEventPublisher {
     }
 
     public void publishMessage(AgentConversation conversation, ChatMessage message) {
+        if (message.turnSummary()) {
+            String html = fragments.turnSummary(message);
+            sendAll(perConversation.get(conversation.id()), "turnSummary", html);
+            sendAll(perAgent.get(conversation.agent().id()), "turnSummary", html);
+            return;
+        }
         String html = fragments.message(message);
         sendAll(perConversation.get(conversation.id()), "message", html);
         sendAll(perAgent.get(conversation.agent().id()), "message", html);
-        publishAgentList();
+        if (message.fullMessage()) {
+            publishAgentList();
+        }
     }
 
     public void publishStatus(AgentConversation conversation, AgentConversationStatus status) {

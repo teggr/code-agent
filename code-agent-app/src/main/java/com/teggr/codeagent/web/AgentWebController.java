@@ -190,6 +190,8 @@ public class AgentWebController {
         view.addObject("conversationId", conversationId);
         view.addObject("conversationStatus", conversation.status());
         view.addObject("messages", conversation.messages());
+        view.addObject("timelineMessages", conversation.timelineMessages());
+        view.addObject("turnSummary", conversation.turnSummary().orElse(null));
         view.addObject("workspaceReady", conversation.isReady());
         view.addObject("promptable", conversation.isReady());
         view.addObject("pendingQuestion", conversation.pendingQuestion());
@@ -205,6 +207,8 @@ public class AgentWebController {
         view.addObject("agentStatus", agent.status());
         view.addObject("conversationStatus", null);
         view.addObject("messages", java.util.List.of());
+        view.addObject("timelineMessages", java.util.List.of());
+        view.addObject("turnSummary", null);
         view.addObject("workspaceUri", workspaceUri(agent));
         view.addObject("workspaceReady", false);
         view.addObject("promptable", false);

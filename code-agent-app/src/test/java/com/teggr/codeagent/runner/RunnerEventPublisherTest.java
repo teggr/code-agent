@@ -55,7 +55,7 @@ class RunnerEventPublisherTest {
         SseEmitter emitter = publisher.subscribe("runner-1");
         RunnerSession session = session("runner-1", "some-repo");
 
-        publisher.publishMessage(session, new ChatMessage("m1", "assistant", "hello world", Instant.now()));
+        publisher.publishMessage(session, ChatMessage.create("m1", "assistant", "hello world", Instant.now()));
 
         assertThat(sent(emitter)).anyMatch(e -> e.contains("hello world") && e.contains("assistant"));
     }
@@ -131,7 +131,7 @@ class RunnerEventPublisherTest {
         RunnerSession session = session("runner-9", "some-repo");
         publisher.setDashboardSessions(() -> List.of(session));
 
-        publisher.publishMessage(session, new ChatMessage("m1", "assistant", "hi", Instant.now()));
+        publisher.publishMessage(session, ChatMessage.create("m1", "assistant", "hi", Instant.now()));
 
         assertThat(sent(dashboard)).anyMatch(e -> e.contains("runner-9") && e.contains("some-repo"));
     }
@@ -141,7 +141,7 @@ class RunnerEventPublisherTest {
         SseEmitter emitter = publisher.subscribe("runner-1");
         RunnerSession session = session("runner-1", "repo");
 
-        publisher.publishMessage(session, new ChatMessage("m1", "assistant", "line one\nline two", Instant.now()));
+        publisher.publishMessage(session, ChatMessage.create("m1", "assistant", "line one\nline two", Instant.now()));
 
         List<String> events = sent(emitter);
         assertThat(events).anyMatch(e -> e.contains("line one"));
@@ -157,7 +157,7 @@ class RunnerEventPublisherTest {
         RunnerSession session = session("runner-1", "repo");
 
         dead.complete();
-        publisher.publishMessage(session, new ChatMessage("m1", "assistant", "still delivered", Instant.now()));
+        publisher.publishMessage(session, ChatMessage.create("m1", "assistant", "still delivered", Instant.now()));
 
         assertThat(sent(alive)).anyMatch(e -> e.contains("still delivered"));
     }

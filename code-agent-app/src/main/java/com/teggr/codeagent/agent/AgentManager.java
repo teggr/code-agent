@@ -150,7 +150,9 @@ public class AgentManager {
             conversation.detachHarnessSession();
         }
         closeConnection(agent.connection(), agentId);
-        agentRuntime.stop(agent.runtimeInstance().runtimeId());
+        if (agent.runtimeInstance() != null) {
+            agentRuntime.stop(agent.runtimeInstance().runtimeId());
+        }
         updateAgent(new Agent(agent.id(), agent.workspace(), agent.runtimeInstance(), null, AgentStatus.STOPPED));
         eventPublisher.publishAgentList();
     }
@@ -160,9 +162,12 @@ public class AgentManager {
         if (agent.connection() != null) {
             return;
         }
+        boolean restoreDiscoveredConversations = agent.status() == AgentStatus.UNAVAILABLE;
+        AgentStatus failureStatus = restoreDiscoveredConversations ? AgentStatus.UNAVAILABLE : AgentStatus.FAILED;
+        boolean startRuntime = shouldStartRuntime(agent);
         updateAgent(agent.withStatus(AgentStatus.CONNECTING));
         eventPublisher.publishAgentList();
-        executor.submit(() -> reconnect(agentId, true));
+        executor.submit(() -> reconnect(agentId, startRuntime, restoreDiscoveredConversations, failureStatus));
     }
 
     public void remove(String agentId) {
@@ -173,7 +178,13 @@ public class AgentManager {
         List<AgentConversation> conversations = List.copyOf(conversations(agentId));
         conversationsByAgent.remove(agentId);
         closeConnection(agent.connection(), agentId);
-        agentRuntime.delete(agent.runtimeInstance().runtimeId());
+        if (agent.runtimeInstance() != null) {
+            try {
+                agentRuntime.delete(agent.runtimeInstance().runtimeId());
+            } catch (Exception e) {
+                System.err.println("Error deleting runtime for agent " + agentId + ": " + e.getMessage());
+            }
+        }
         Agent removed = new Agent(agent.id(), agent.workspace(), agent.runtimeInstance(), null, AgentStatus.REMOVED);
         conversations.forEach(conversation -> {
             conversation.setAgent(removed);
@@ -193,62 +204,107 @@ public class AgentManager {
 
     private void adopt(DiscoveredAgent discovered) {
         String agentId = discovered.agentId();
+        AgentConnection connection = null;
         try {
             AgentRuntimeInstance instance = discovered.running()
                     ? discovered.instance() : agentRuntime.start(discovered.instance());
-            AgentConnection connection = connect(instance);
+            connection = connect(instance);
             Agent agent = new Agent(agentId, discovered.workspace(), instance, connection, AgentStatus.RUNNING);
             agents.put(agentId, agent);
-            List<String> conversationIds = connection.harness().listSessionIds();
-            if (conversationIds == null || conversationIds.isEmpty()) {
-                AgentConversation conversation = new AgentConversation(agent);
-                wireEvents(conversation);
-                conversation.attachHarnessSession(connection.harness().createSession(conversation.id()));
-                conversation.addMessage("system", "Reconnected to an existing agent; no persisted conversation history was found.");
-                conversation.setStatus(AgentConversationStatus.IDLE);
-                register(agent, conversation);
+            restoreDiscoveredConversations(agent, connection);
+        } catch (Exception e) {
+            closeConnection(connection, agentId);
+            System.err.println("[agent " + agentId + "] Adoption failed: " + e.getMessage());
+            registerUnavailable(discovered, "Unable to reconnect to the existing agent runtime: " + failureMessage(e));
+        }
+        eventPublisher.publishAgentList();
+    }
+
+    private void reconnect(String agentId, boolean startRuntime, boolean restoreDiscoveredConversations,
+            AgentStatus failureStatus) {
+        Agent agent = requireAgent(agentId);
+        AgentConnection connection = null;
+        try {
+            AgentRuntimeInstance instance = startRuntime
+                    ? agentRuntime.start(agent.runtimeInstance()) : agent.runtimeInstance();
+            connection = connect(instance);
+            Agent connected = new Agent(agent.id(), agent.workspace(), instance, connection, AgentStatus.RUNNING);
+            updateAgent(connected);
+            if (restoreDiscoveredConversations || conversations(agentId).isEmpty()) {
+                conversationsByAgent.remove(agentId);
+                restoreDiscoveredConversations(connected, connection);
+                for (AgentConversation conversation : conversations(agentId)) {
+                    eventPublisher.publishWorkspaceLink(conversation);
+                }
             } else {
-                for (String conversationId : conversationIds) {
-                    AgentConversation conversation = new AgentConversation(conversationId, agent);
-                    wireEvents(conversation);
+                for (AgentConversation conversation : conversations(agentId)) {
                     try {
-                        conversation.attachHarnessSession(connection.harness().resumeSession(conversationId));
+                        conversation.attachHarnessSession(connection.harness().resumeSession(conversation.id()));
+                        eventPublisher.publishWorkspaceLink(conversation);
                         conversation.setStatus(AgentConversationStatus.IDLE);
                     } catch (Exception e) {
                         conversation.setStatus(AgentConversationStatus.FAILED);
                         conversation.addMessage("system", "The earlier conversation could not be resumed.");
                     }
-                    register(agent, conversation);
                 }
             }
         } catch (Exception e) {
-            System.err.println("[agent " + agentId + "] Adoption failed: " + e.getMessage());
+            closeConnection(connection, agentId);
+            conversations(agentId).forEach(conversation -> {
+                conversation.setStatus(AgentConversationStatus.FAILED);
+                conversation.addMessage("system", "Unable to reconnect to the existing agent runtime: " + failureMessage(e));
+            });
+            updateAgent(currentAgent(agentId).withStatus(failureStatus));
         }
         eventPublisher.publishAgentList();
     }
 
-    private void reconnect(String agentId, boolean startRuntime) {
-        Agent agent = requireAgent(agentId);
-        try {
-            AgentRuntimeInstance instance = startRuntime
-                    ? agentRuntime.start(agent.runtimeInstance()) : agent.runtimeInstance();
-            AgentConnection connection = connect(instance);
-            Agent connected = new Agent(agent.id(), agent.workspace(), instance, connection, AgentStatus.RUNNING);
-            updateAgent(connected);
-            for (AgentConversation conversation : conversations(agentId)) {
-                try {
-                    conversation.attachHarnessSession(connection.harness().resumeSession(conversation.id()));
-                    eventPublisher.publishWorkspaceLink(conversation);
-                    conversation.setStatus(AgentConversationStatus.IDLE);
-                } catch (Exception e) {
-                    conversation.setStatus(AgentConversationStatus.FAILED);
-                    conversation.addMessage("system", "The earlier conversation could not be resumed.");
-                }
-            }
-        } catch (Exception e) {
-            updateAgent(currentAgent(agentId).withStatus(AgentStatus.FAILED));
+    private void restoreDiscoveredConversations(Agent agent, AgentConnection connection) throws Exception {
+        List<String> conversationIds = connection.harness().listSessionIds();
+        if (conversationIds == null || conversationIds.isEmpty()) {
+            AgentConversation conversation = new AgentConversation(agent);
+            wireEvents(conversation);
+            conversation.attachHarnessSession(connection.harness().createSession(conversation.id()));
+            conversation.addMessage("system", "Reconnected to an existing agent; no persisted conversation history was found.");
+            conversation.setStatus(AgentConversationStatus.IDLE);
+            register(agent, conversation);
+            return;
         }
-        eventPublisher.publishAgentList();
+
+        for (String conversationId : conversationIds) {
+            AgentConversation conversation = new AgentConversation(conversationId, agent);
+            wireEvents(conversation);
+            try {
+                conversation.attachHarnessSession(connection.harness().resumeSession(conversationId));
+                conversation.setStatus(AgentConversationStatus.IDLE);
+            } catch (Exception e) {
+                conversation.setStatus(AgentConversationStatus.FAILED);
+                conversation.addMessage("system", "The earlier conversation could not be resumed.");
+            }
+            register(agent, conversation);
+        }
+    }
+
+    private void registerUnavailable(DiscoveredAgent discovered, String message) {
+        Agent agent = new Agent(discovered.agentId(), discovered.workspace(), discovered.instance(), null,
+                AgentStatus.UNAVAILABLE);
+        AgentConversation conversation = new AgentConversation(agent);
+        wireEvents(conversation);
+        conversation.setStatus(AgentConversationStatus.FAILED);
+        conversation.addMessage("system", message);
+        register(agent, conversation);
+    }
+
+    private static String failureMessage(Exception e) {
+        return e.getMessage() == null || e.getMessage().isBlank()
+                ? e.getClass().getSimpleName()
+                : e.getMessage();
+    }
+
+    private static boolean shouldStartRuntime(Agent agent) {
+        return agent.status() == AgentStatus.STOPPED
+                || agent.runtimeInstance() == null
+                || agent.runtimeInstance().harnessPort() <= 0;
     }
 
     private AgentConnection connect(AgentRuntimeInstance instance) throws Exception {

@@ -24,6 +24,12 @@ public class FragmentRenderer {
         return templateEngine.process("fragments", Set.of("message"), context);
     }
 
+    public String turnSummary(ChatMessage message) {
+        Context context = new Context();
+        context.setVariable("message", message);
+        return templateEngine.process("fragments", Set.of("turnSummary"), context);
+    }
+
     public String statusBadge(RunnerStatus status) {
         Context context = new Context();
         context.setVariable("status", status);

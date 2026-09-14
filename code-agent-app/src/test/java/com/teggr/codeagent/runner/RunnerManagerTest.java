@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -92,6 +91,7 @@ class RunnerManagerTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void sessionErrorMarksRunnerFailedAndAddsErrorMessage() {
         HarnessSession agentSession = mock(HarnessSession.class);
         ArgumentCaptor<Runnable> idleListenerCaptor = ArgumentCaptor.forClass(Runnable.class);
@@ -110,7 +110,8 @@ class RunnerManagerTest {
     }
 
     @Test
-    void answeringAQuestionCompletesTheAgentsPendingFutureAndRecordsBothMessages() {
+    @SuppressWarnings("unchecked")
+    void answeringAQuestionCompletesTheAgentsPendingFutureAndRecordsAnswer() {
         HarnessSession agentSession = mock(HarnessSession.class);
         ArgumentCaptor<java.util.function.Function<com.teggr.codeagent.harness.Question, java.util.concurrent.CompletableFuture<String>>> questionHandlerCaptor =
                 ArgumentCaptor.forClass(java.util.function.Function.class);
@@ -124,7 +125,7 @@ class RunnerManagerTest {
         java.util.concurrent.CompletableFuture<String> answerFuture = questionHandlerCaptor.getValue().apply(question);
 
         assertThat(session.pendingQuestion()).isEqualTo(question);
-        assertThat(session.messages()).extracting("content").contains("Which environment?");
+    assertThat(session.messages()).extracting("content").doesNotContain("Which environment?");
 
         session.answerQuestion("question-1", "prod");
 
@@ -273,7 +274,7 @@ class RunnerManagerTest {
 
         verify(dockerRunnerService).stop("container-1");
         verify(dockerRunnerService).stop("container-2");
-        assertThat(runnerManager.list()).extracting(RunnerSession::status)
+        assertThat(runnerManager.list()).extracting(session -> session.status())
             .containsOnly(RunnerStatus.STOPPED);
     }
 
@@ -332,7 +333,7 @@ class RunnerManagerTest {
         runnerManager.adoptExisting();
 
         await(() -> runnerManager.sessions("runner-1").size() == 2);
-        assertThat(runnerManager.sessions("runner-1")).extracting(RunnerSession::id)
+        assertThat(runnerManager.sessions("runner-1")).extracting(session -> session.id())
                 .containsExactlyInAnyOrder("session-1", "session-2");
         verify(harness, times(2)).resumeSession(anyString());
     }

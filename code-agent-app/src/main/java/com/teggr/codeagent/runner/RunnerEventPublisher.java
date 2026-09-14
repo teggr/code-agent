@@ -54,10 +54,18 @@ public class RunnerEventPublisher {
     }
 
     public void publishMessage(RunnerSession session, ChatMessage message) {
+        if (message.turnSummary()) {
+            String html = fragments.turnSummary(message);
+            sendAll(perSession.get(session.id()), "turnSummary", html);
+            sendAll(perRunner.get(session.runner().id()), "turnSummary", html);
+            return;
+        }
         String html = fragments.message(message);
         sendAll(perSession.get(session.id()), "message", html);
         sendAll(perRunner.get(session.runner().id()), "message", html);
-        publishRunnerList();
+        if (message.fullMessage()) {
+            publishRunnerList();
+        }
     }
 
     public void publishStatus(RunnerSession session, RunnerStatus status) {

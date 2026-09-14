@@ -58,12 +58,11 @@ public class RunnerSession {
             addMessage("assistant", "Copilot error: " + error);
         });
         agentSession.onToolActivity(activity -> addMessage("tool", activity.summary()));
-        agentSession.onEvent(event -> addMessage("system", event.summary()));
+        agentSession.onEvent(event -> addMessage("system", event.summary(), event.type()));
         agentSession.onQuestion(question -> {
             CompletableFuture<String> future = new CompletableFuture<>();
             pendingQuestions.put(question.id(), future);
             pendingQuestion = question;
-            addMessage("question", question.prompt());
             RunnerSessionListener current = listener;
             if (current != null) {
                 current.onQuestionChange(this, question);
@@ -85,7 +84,7 @@ public class RunnerSession {
                 if (entry == null || entry.content() == null || entry.content().isBlank()) {
                     continue;
                 }
-                messages.add(new ChatMessage(UUID.randomUUID().toString(), entry.role(), entry.content(), Instant.now()));
+                messages.add(ChatMessage.create(UUID.randomUUID().toString(), entry.role(), entry.content(), Instant.now(), entry.eventType()));
             }
         } catch (Exception e) {
             System.err.println("Error loading session history for runner " + runner.id() + ": " + e.getMessage());
@@ -152,13 +151,17 @@ public class RunnerSession {
     }
 
     public void addMessage(String role, String content) {
+        addMessage(role, content, null);
+    }
+
+    public void addMessage(String role, String content, String eventType) {
         if (content == null || content.isBlank()) {
             return;
         }
         if ("assistant".equals(role)) {
             System.out.println("[runner " + runner.id() + "] Assistant message captured: " + abbreviate(content));
         }
-        ChatMessage message = new ChatMessage(UUID.randomUUID().toString(), role, content, Instant.now());
+        ChatMessage message = ChatMessage.create(UUID.randomUUID().toString(), role, content, Instant.now(), eventType);
         this.messages.add(message);
         RunnerSessionListener current = listener;
         if (current != null) {
@@ -179,9 +182,10 @@ public class RunnerSession {
     }
 
     public String lastMessage() {
-        if (messages.isEmpty()) {
-            return "No messages yet";
-        }
-        return messages.get(messages.size() - 1).content();
+        return messages.stream()
+                .filter(message -> message.fullMessage())
+                .reduce((first, second) -> second)
+                .map(message -> message.content())
+                .orElse("No messages yet");
     }
 }

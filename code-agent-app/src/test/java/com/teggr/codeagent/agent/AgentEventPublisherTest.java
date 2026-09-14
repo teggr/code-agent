@@ -52,7 +52,7 @@ class AgentEventPublisherTest {
         SseEmitter conversationEmitter = publisher.subscribeConversation("conversation-1");
         AgentConversation conversation = conversation();
 
-        publisher.publishMessage(conversation, new ChatMessage("m1", "assistant", "hello", Instant.now()));
+        publisher.publishMessage(conversation, ChatMessage.create("m1", "assistant", "hello", Instant.now()));
 
         assertThat(sent(agentEmitter)).anyMatch(event -> event.contains("hello") && event.contains("assistant"));
         assertThat(sent(conversationEmitter)).anyMatch(event -> event.contains("hello") && event.contains("assistant"));
@@ -111,9 +111,38 @@ class AgentEventPublisherTest {
         AgentConversation conversation = conversation();
         publisher.setDashboardAgents(() -> List.of(conversation.agent()));
 
-        publisher.publishMessage(conversation, new ChatMessage("m1", "assistant", "hello", Instant.now()));
+        publisher.publishMessage(conversation, ChatMessage.create("m1", "assistant", "hello", Instant.now()));
 
         assertThat(sent(dashboard)).anyMatch(event -> event.contains("agent-1") && event.contains("repository"));
+    }
+
+    @Test
+    void compactActivityMessagesRenderInlineAndDoNotRefreshDashboardAgentList() {
+        SseEmitter agent = publisher.subscribe("agent-1");
+        SseEmitter dashboard = publisher.subscribeDashboard();
+        AgentConversation conversation = conversation();
+        publisher.setDashboardAgents(() -> List.of(conversation.agent()));
+        int eventCount = sent(dashboard).size();
+
+        publisher.publishMessage(conversation, ChatMessage.create("m1", "tool", "Running terminal...", Instant.now()));
+
+        assertThat(sent(agent)).anyMatch(event -> event.contains("activity-details")
+                && event.contains("Running terminal..."));
+        assertThat(sent(dashboard)).hasSize(eventCount);
+    }
+
+    @Test
+    void usageMessagesUpdateTurnSummaryInsteadOfTimeline() {
+        SseEmitter emitter = publisher.subscribe("agent-1");
+        AgentConversation conversation = conversation();
+
+        publisher.publishMessage(conversation,
+                ChatMessage.create("m1", "system", "Usage: 100/200 tokens", Instant.now(), "SessionUsageInfoEvent"));
+
+        assertThat(sent(emitter)).anyMatch(event -> event.contains("turnSummary")
+                && event.contains("Usage: 100/200 tokens"));
+        assertThat(sent(emitter)).noneMatch(event -> event.contains("event:message")
+                && event.contains("Usage: 100/200 tokens"));
     }
 
     @Test
@@ -122,7 +151,7 @@ class AgentEventPublisherTest {
         AgentConversation conversation = conversation();
 
         publisher.publishMessage(conversation,
-                new ChatMessage("m1", "assistant", "line one\nline two", Instant.now()));
+            ChatMessage.create("m1", "assistant", "line one\nline two", Instant.now()));
 
         assertThat(sent(emitter)).anyMatch(event -> event.contains("line one"));
         assertThat(sent(emitter)).anyMatch(event -> event.contains("line two"));
@@ -136,7 +165,7 @@ class AgentEventPublisherTest {
 
         completed.complete();
         publisher.publishMessage(conversation(),
-                new ChatMessage("m1", "assistant", "still delivered", Instant.now()));
+            ChatMessage.create("m1", "assistant", "still delivered", Instant.now()));
 
         assertThat(sent(active)).anyMatch(event -> event.contains("still delivered"));
     }

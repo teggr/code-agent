@@ -134,8 +134,8 @@ class CopilotHarnessSession implements HarnessSession {
     /** Maps known SDK events to a human-readable summary; returns null for events already surfaced elsewhere. */
     private static String summarize(SessionEvent event) {
         return switch (event) {
-            case SessionStartEvent e -> "Session started";
-            case SessionResumeEvent e -> "Session resumed";
+            case SessionStartEvent e -> constant(e, "Session started");
+            case SessionResumeEvent e -> constant(e, "Session resumed");
             case SessionShutdownEvent e -> "Session shutting down"
                     + (e.getData().errorReason() != null ? ": " + e.getData().errorReason() : "");
             case SessionInfoEvent e -> e.getData().message();
@@ -146,15 +146,15 @@ class CopilotHarnessSession implements HarnessSession {
                     + e.getData().outputTokens() + " out tokens";
             case SessionTruncationEvent e -> "Context truncated (removed " + e.getData().tokensRemovedDuringTruncation()
                     + " tokens)";
-            case SessionCompactionStartEvent e -> "Context compaction started";
+            case SessionCompactionStartEvent e -> constant(e, "Context compaction started");
             case SessionCompactionCompleteEvent e -> "Context compaction "
                     + (Boolean.TRUE.equals(e.getData().success()) ? "completed" : "failed")
                     + " (removed " + e.getData().tokensRemoved() + " tokens)";
-            case AssistantTurnStartEvent e -> "Agent is thinking...";
-            case AssistantTurnEndEvent e -> "Agent finished this turn";
+            case AssistantTurnStartEvent e -> constant(e, "Agent is thinking...");
+            case AssistantTurnEndEvent e -> constant(e, "Agent finished this turn");
             case SubagentStartedEvent e -> "Subagent '" + e.getData().agentName() + "' started";
             case SubagentSelectedEvent e -> "Subagent '" + e.getData().agentName() + "' selected";
-            case SubagentDeselectedEvent e -> "Subagent deselected";
+            case SubagentDeselectedEvent e -> constant(e, "Subagent deselected");
             case SubagentCompletedEvent e -> "Subagent '" + e.getData().agentName() + "' completed";
             case SubagentFailedEvent e -> "Subagent '" + e.getData().agentName() + "' failed: " + e.getData().error();
             case HookStartEvent e -> "Hook '" + e.getData().hookType() + "' started";
@@ -162,30 +162,36 @@ class CopilotHarnessSession implements HarnessSession {
                     + (Boolean.TRUE.equals(e.getData().success()) ? "completed" : "failed");
             case SkillInvokedEvent e -> "Skill '" + e.getData().name() + "' invoked";
             case CommandQueuedEvent e -> "Command queued: " + e.getData().command();
-            case CommandCompletedEvent e -> "Command completed";
-            case AbortEvent e -> "Operation aborted";
-            case PermissionRequestedEvent e -> "Permission requested";
-            case PermissionCompletedEvent e -> "Permission approved";
+            case CommandCompletedEvent e -> constant(e, "Command completed");
+            case AbortEvent e -> constant(e, "Operation aborted");
+            case PermissionRequestedEvent e -> constant(e, "Permission requested");
+            case PermissionCompletedEvent e -> constant(e, "Permission approved");
             default -> null;
         };
     }
 
+    private static String constant(SessionEvent event, String summary) {
+        event.getType();
+        return summary;
+    }
+
     private static HarnessHistoryEntry toHistoryEntry(SessionEvent event, Map<String, String> toolNamesByCallId) {
         return switch (event) {
-            case UserMessageEvent e -> new HarnessHistoryEntry("user", e.getData().content());
-            case AssistantMessageEvent e -> new HarnessHistoryEntry("assistant", e.getData().content());
+            case UserMessageEvent e -> new HarnessHistoryEntry("user", e.getData().content(), event.getType());
+            case AssistantMessageEvent e -> new HarnessHistoryEntry("assistant", e.getData().content(), event.getType());
             case ToolExecutionStartEvent e -> {
                 toolNamesByCallId.put(e.getData().toolCallId(), e.getData().toolName());
-                yield new HarnessHistoryEntry("tool", "Running " + e.getData().toolName() + "...");
+                yield new HarnessHistoryEntry("tool", "Running " + e.getData().toolName() + "...", event.getType());
             }
             case ToolExecutionCompleteEvent e -> {
                 String toolName = toolNamesByCallId.getOrDefault(e.getData().toolCallId(), e.getData().toolCallId());
                 yield new HarnessHistoryEntry("tool",
-                        ((e.getData().success() == null || e.getData().success()) ? "Done " : "Failed ") + toolName);
+                        ((e.getData().success() == null || e.getData().success()) ? "Done " : "Failed ") + toolName,
+                        event.getType());
             }
             default -> {
                 String summary = summarize(event);
-                yield summary == null ? null : new HarnessHistoryEntry("system", summary);
+                yield summary == null ? null : new HarnessHistoryEntry("system", summary, event.getType());
             }
         };
     }

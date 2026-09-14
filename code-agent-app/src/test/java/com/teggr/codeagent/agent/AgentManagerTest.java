@@ -314,6 +314,112 @@ class AgentManagerTest {
         verify(harnessFactory).connect(org.mockito.ArgumentMatchers.eq(3333), anyString(), any());
     }
 
+        @Test
+        void failedAdoptionRegistersUnavailableAgentWithRecoveryConversation() throws Exception {
+        when(agentRuntime.discover()).thenReturn(List.of(discovered(true)));
+        when(harnessFactory.connect(anyInt(), anyString(), any()))
+            .thenThrow(new RuntimeException("connect failed"));
+
+        manager.adoptExisting();
+
+        await(() -> manager.get("agent-1") != null);
+        Agent agent = manager.get("agent-1");
+        assertThat(agent.status()).isEqualTo(AgentStatus.UNAVAILABLE);
+        assertThat(agent.connection()).isNull();
+        assertThat(agent.runtimeInstance().runtimeId()).isEqualTo("container-1");
+        assertThat(manager.conversations("agent-1")).hasSize(1);
+        assertThat(manager.conversations("agent-1").iterator().next().messages())
+            .extracting(message -> message.content())
+            .contains("Unable to reconnect to the existing agent runtime: connect failed");
+        }
+
+        @Test
+        void unavailableRunningAgentReconnectsWithoutStartingRuntime() throws Exception {
+        AgentHarness harness = mock(AgentHarness.class);
+        when(harness.listSessionIds()).thenReturn(List.of("conversation-1"));
+        when(harness.resumeSession("conversation-1")).thenReturn(mock(HarnessSession.class));
+        when(agentRuntime.discover()).thenReturn(List.of(discovered(true)));
+        when(harnessFactory.connect(anyInt(), anyString(), any()))
+            .thenThrow(new RuntimeException("connect failed"))
+            .thenReturn(harness);
+
+        manager.adoptExisting();
+        await(() -> manager.get("agent-1") != null && manager.get("agent-1").status() == AgentStatus.UNAVAILABLE);
+
+        manager.restart("agent-1");
+
+        await(() -> manager.get("agent-1").status() == AgentStatus.RUNNING
+            && manager.conversations("agent-1").stream()
+                .anyMatch(conversation -> conversation.id().equals("conversation-1")));
+        assertThat(manager.conversations("agent-1").stream().map(conversation -> conversation.id()).toList())
+            .containsExactly("conversation-1");
+        verify(agentRuntime, never()).start(any());
+        }
+
+        @Test
+        void unavailableStoppedAgentStartsRuntimeBeforeReconnect() throws Exception {
+        AgentHarness harness = mock(AgentHarness.class);
+        when(harness.listSessionIds()).thenReturn(List.of("conversation-1"));
+        when(harness.resumeSession("conversation-1")).thenReturn(mock(HarnessSession.class));
+        DiscoveredAgent stopped = new DiscoveredAgent("agent-1", new GitRepositoryWorkspace(repositoryUrl()),
+            runtime("container-1", 0), false);
+        when(agentRuntime.discover()).thenReturn(List.of(stopped));
+        when(agentRuntime.start(stopped.instance()))
+            .thenReturn(runtime("container-1", 3333))
+            .thenReturn(runtime("container-1", 4444));
+        when(harnessFactory.connect(anyInt(), anyString(), any()))
+            .thenThrow(new RuntimeException("connect failed"))
+            .thenReturn(harness);
+
+        manager.adoptExisting();
+        await(() -> manager.get("agent-1") != null && manager.get("agent-1").status() == AgentStatus.UNAVAILABLE);
+
+        manager.restart("agent-1");
+
+        await(() -> manager.get("agent-1").status() == AgentStatus.RUNNING);
+        assertThat(manager.get("agent-1").runtimeInstance().harnessPort()).isEqualTo(4444);
+        verify(agentRuntime, times(2)).start(any());
+        }
+
+        @Test
+        void reconnectFailureKeepsUnavailableAgentVisible() throws Exception {
+        when(agentRuntime.discover()).thenReturn(List.of(discovered(true)));
+        when(harnessFactory.connect(anyInt(), anyString(), any()))
+            .thenThrow(new RuntimeException("first failure"))
+            .thenThrow(new RuntimeException("second failure"));
+
+        manager.adoptExisting();
+        await(() -> manager.get("agent-1") != null && manager.get("agent-1").status() == AgentStatus.UNAVAILABLE);
+
+        manager.restart("agent-1");
+
+        await(() -> manager.get("agent-1").status() == AgentStatus.CONNECTING);
+        await(() -> manager.get("agent-1").status() == AgentStatus.UNAVAILABLE
+            && manager.conversations("agent-1").stream()
+                .flatMap(conversation -> conversation.messages().stream())
+                .anyMatch(message -> message.content().contains("second failure")));
+        }
+
+        @Test
+        void unavailableAgentCanBeStoppedAndRemoved() throws Exception {
+        when(agentRuntime.discover()).thenReturn(List.of(discovered(true)));
+        when(harnessFactory.connect(anyInt(), anyString(), any()))
+            .thenThrow(new RuntimeException("connect failed"));
+
+        manager.adoptExisting();
+        await(() -> manager.get("agent-1") != null && manager.get("agent-1").status() == AgentStatus.UNAVAILABLE);
+
+        manager.stop("agent-1");
+
+        assertThat(manager.get("agent-1").status()).isEqualTo(AgentStatus.STOPPED);
+        verify(agentRuntime).stop("container-1");
+
+        manager.remove("agent-1");
+
+        assertThat(manager.get("agent-1")).isNull();
+        verify(agentRuntime).delete("container-1");
+        }
+
     @Test
     void synchronousStartDeletesProvisionedRuntimeWhenHarnessConnectFails() throws Exception {
         when(agentRuntime.provision(any())).thenReturn(runtime("container-1", 1111));

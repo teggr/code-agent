@@ -46,10 +46,28 @@
             hx-swap="innerHTML" th:hx-vals="|{&quot;query&quot;:&quot;${query}&quot;,&quot;page&quot;:${nextPage}}|">Load more</button>
   </div>
 
-  <!-- One chat message; appended via hx-swap="beforeend" on the conversation page. -->
-  <div th:fragment="message(message)" class="msg" th:classappend="'msg-' + ${message.role}">
-    <span class="role" th:text="${message.role}">user</span>
-    <span th:text="${message.content}">content</span>
+  <!-- One timeline message; full chat rows and compact activity rows share chronological append order. -->
+  <div th:fragment="message(message)" class="msg"
+       th:classappend="'msg-' + ${message.role} + ' msg-display-' + ${message.display.name().toLowerCase()}">
+    <th:block th:if="${message.compactActivity()}">
+      <details class="activity-details">
+        <summary>
+          <span class="role" th:text="${message.role}">tool</span>
+          <span th:text="${message.content}">activity</span>
+        </summary>
+        <div class="activity-content" th:text="${message.content}">activity</div>
+      </details>
+    </th:block>
+    <th:block th:unless="${message.compactActivity()}">
+      <span class="role" th:text="${message.role}">user</span>
+      <span th:text="${message.content}">content</span>
+    </th:block>
+  </div>
+
+  <div th:fragment="turnSummary(message)" id="turn-summary" class="turn-summary"
+       sse-swap="turnSummary" hx-swap="outerHTML">
+    <span class="role">usage</span>
+    <span th:if="${message != null}" th:text="${message.content}">Usage</span>
   </div>
 
     <span th:fragment="conversationStatusBadge(conversationStatus)" class="status" id="conversation-status"
@@ -103,6 +121,20 @@
           <a class="button" th:href="|/agents/${agent.id}|">Open</a>
           <a class="button" th:if="${agent.runtimeInstance != null and agent.runtimeInstance.workspaceAccess != null}"
              th:href="${agent.runtimeInstance.workspaceAccess.uri}">VS Code</a>
+          <form method="post" th:if="${agent.status.name() == 'STOPPED' or agent.status.name() == 'UNAVAILABLE'}"
+                th:action="|/agents/${agent.id}/start|">
+            <button class="button" type="submit"
+                    th:text="${agent.status.name() == 'UNAVAILABLE'} ? 'Reconnect' : 'Start agent'">Start agent</button>
+          </form>
+          <form method="post" th:if="${agent.status.name() == 'RUNNING' or agent.status.name() == 'CONNECTING' or agent.status.name() == 'UNAVAILABLE'}"
+                th:action="|/agents/${agent.id}/stop|">
+            <button class="button" type="submit"
+                    th:text="${agent.status.name() == 'UNAVAILABLE'} ? 'Stop runtime' : 'Stop agent'">Stop agent</button>
+          </form>
+          <form method="post" th:action="|/agents/${agent.id}/remove|">
+            <button class="button" type="submit"
+                    th:text="${agent.status.name() == 'UNAVAILABLE'} ? 'Delete runtime' : 'Remove agent'">Remove agent</button>
+          </form>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ public enum AgentStatus {
     CONNECTING,
     RUNNING,
     STOPPED,
+    UNAVAILABLE,
     FAILED,
     REMOVED
 }

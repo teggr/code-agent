@@ -23,9 +23,9 @@ class AgentConversationTest {
     void attachingSessionLoadsPersistedHistoryAndIgnoresBlankEntries() throws Exception {
         HarnessSession session = mock(HarnessSession.class);
         when(session.history()).thenReturn(List.of(
-                new HarnessHistoryEntry("user", "Inspect the project"),
-                new HarnessHistoryEntry("assistant", "  "),
-                new HarnessHistoryEntry("assistant", "The build is healthy")));
+            new HarnessHistoryEntry("user", "Inspect the project", "userMessage"),
+            new HarnessHistoryEntry("assistant", "  ", "assistantMessage"),
+            new HarnessHistoryEntry("assistant", "The build is healthy", "assistantMessage")));
         AgentConversation conversation = conversation();
 
         conversation.attachHarnessSession(session);
@@ -41,8 +41,8 @@ class AgentConversationTest {
     void existingHistoryIsNotDuplicatedWhenSessionIsReattached() throws Exception {
         HarnessSession first = mock(HarnessSession.class);
         HarnessSession resumed = mock(HarnessSession.class);
-        when(first.history()).thenReturn(List.of(new HarnessHistoryEntry("user", "Original prompt")));
-        when(resumed.history()).thenReturn(List.of(new HarnessHistoryEntry("user", "Original prompt")));
+        when(first.history()).thenReturn(List.of(new HarnessHistoryEntry("user", "Original prompt", "userMessage")));
+        when(resumed.history()).thenReturn(List.of(new HarnessHistoryEntry("user", "Original prompt", "userMessage")));
         AgentConversation conversation = conversation();
 
         conversation.attachHarnessSession(first);
@@ -73,7 +73,7 @@ class AgentConversationTest {
     }
 
     @Test
-    void answeringPendingQuestionCompletesFutureAndRecordsQuestionAndAnswer() throws Exception {
+    void answeringPendingQuestionCompletesFutureAndRecordsAnswer() throws Exception {
         HarnessSession session = mock(HarnessSession.class);
         ArgumentCaptor<Function<Question, CompletableFuture<String>>> handler = functionCaptor();
         AgentConversation conversation = conversation();
@@ -87,7 +87,25 @@ class AgentConversationTest {
         assertThat(answer).isCompletedWithValue("prod");
         assertThat(conversation.pendingQuestion()).isNull();
         assertThat(conversation.messages().stream().map(message -> message.content()).toList())
-                .containsExactly("Which environment?", "prod");
+            .containsExactly("prod");
+        }
+
+        @Test
+        void classifiesConversationActivityAndUsageMessagesForTimelineRendering() {
+        AgentConversation conversation = conversation();
+
+        conversation.addMessage("user", "Run tests");
+        conversation.addMessage("tool", "Running terminal...");
+        conversation.addMessage("system", "Usage: 100/200 tokens", "SessionUsageInfoEvent");
+
+        assertThat(conversation.messages()).extracting(message -> message.display()).containsExactly(
+            ChatMessageDisplay.FULL_MESSAGE,
+            ChatMessageDisplay.COMPACT_ACTIVITY,
+            ChatMessageDisplay.TURN_SUMMARY);
+        assertThat(conversation.timelineMessages()).extracting(message -> message.content())
+            .containsExactly("Run tests", "Running terminal...");
+        assertThat(conversation.turnSummary()).hasValueSatisfying(message ->
+            assertThat(message.content()).isEqualTo("Usage: 100/200 tokens"));
     }
 
     private static AgentConversation conversation() {

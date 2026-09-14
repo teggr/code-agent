@@ -12,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 
-import com.teggr.codeagent.docker.DockerRunnerProperties;
+import com.teggr.codeagent.agent.runtime.docker.DockerAgentRuntimeProperties;
 import com.teggr.codeagent.runner.RunnerManager;
 
 @SpringBootApplication
@@ -40,7 +40,7 @@ public class CodeAgentApplication {
 
     @Bean
     public ApplicationListener<ApplicationReadyEvent> existingRunnerAdoption(
-            RunnerManager runnerManager, DockerRunnerProperties properties) {
+            RunnerManager runnerManager, DockerAgentRuntimeProperties properties) {
         return event -> {
             if (!properties.isAdoptExistingOnStartup()) {
                 return;

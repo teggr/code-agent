@@ -9,7 +9,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.teggr.codeagent.docker.DockerRunnerProperties;
+import com.teggr.codeagent.agent.runtime.docker.DockerAgentRuntimeProperties;
 
 /** Retrieves the repositories available to the token used by runner containers. */
 @Service
@@ -18,9 +18,10 @@ public class GitHubRepositoryService {
     static final int PAGE_SIZE = 100;
 
     private final RestClient restClient;
-    private final DockerRunnerProperties runnerProperties;
+        private final DockerAgentRuntimeProperties runnerProperties;
 
-    public GitHubRepositoryService(RestClient.Builder restClientBuilder, DockerRunnerProperties runnerProperties) {
+        public GitHubRepositoryService(RestClient.Builder restClientBuilder,
+            DockerAgentRuntimeProperties runnerProperties) {
         this.restClient = restClientBuilder
                 .baseUrl("https://api.github.com")
                 .defaultHeader("Accept", "application/vnd.github+json")

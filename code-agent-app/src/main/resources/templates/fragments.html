@@ -93,7 +93,7 @@
           <span class="status" th:text="${runnerSession.status}">IDLE</span>
           <a class="button" th:href="|/runners/${runnerSession.runner.id}|">Open</a>
           <a class="button" th:classappend="${runnerSession.ready} ? '' : ' disabled'"
-             th:href="${runnerSession.ready} ? ${runnerSession.runner.containerLaunch.devContainerUri} : '#'"
+             th:href="${runnerSession.ready} ? ${runnerSession.runner.runtimeInstance.workspaceAccess.uri} : '#'"
              th:text="${runnerSession.ready} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
         </div>
       </div>

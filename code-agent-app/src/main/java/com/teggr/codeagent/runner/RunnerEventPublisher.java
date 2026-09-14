@@ -73,7 +73,10 @@ public class RunnerEventPublisher {
 
     /** Pushes the real devContainerUri once the placeholder "pending" container has been replaced. */
     public void publishVscodeLink(RunnerSession session) {
-        String devContainerUri = session.runner().containerLaunch().devContainerUri();
+        String devContainerUri = session.runner().runtimeInstance() == null
+            || session.runner().runtimeInstance().workspaceAccess() == null
+                ? null
+                : session.runner().runtimeInstance().workspaceAccess().uri();
         String html = fragments.vscodeLink(devContainerUri, session.isReady());
         sendAll(perSession.get(session.id()), "vscode", html);
         sendAll(perRunner.get(session.runner().id()), "vscode", html);

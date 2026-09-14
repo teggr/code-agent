@@ -98,7 +98,7 @@ public class RunnerSession {
         pendingQuestions.values().forEach(future -> future.complete(""));
         pendingQuestions.clear();
         Runner current = runner;
-        this.runner = new Runner(current.id(), current.repoUrl(), current.containerLaunch(), null);
+        this.runner = new Runner(current.id(), current.repoUrl(), current.runtimeInstance(), null);
     }
 
     /** Completes a pending agent question with the user's answer; no-op if the question is unknown or already answered. */

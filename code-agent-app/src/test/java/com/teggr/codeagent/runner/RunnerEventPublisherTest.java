@@ -19,7 +19,8 @@ import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import com.teggr.codeagent.docker.ContainerLaunch;
+import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
+import com.teggr.codeagent.agent.runtime.WorkspaceAccess;
 
 /** Uses a real auto-configured Thymeleaf TemplateEngine so fragments render exactly as in production. */
 @SpringBootTest(classes = RunnerEventPublisherTest.TestConfig.class)
@@ -162,7 +163,9 @@ class RunnerEventPublisherTest {
     }
 
     private RunnerSession session(String runnerId, String repoUrl) {
-        return new RunnerSession(new Runner(runnerId, repoUrl, new ContainerLaunch("c", 0), null));
+        AgentRuntimeInstance instance = new AgentRuntimeInstance("c", 0, "/workspace",
+                new WorkspaceAccess("vscode://workspace", "code --new-window"));
+        return new RunnerSession(new Runner(runnerId, repoUrl, instance, null));
     }
 
     private static List<String> sent(SseEmitter emitter) {

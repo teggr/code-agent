@@ -81,7 +81,7 @@ public class RunnerWebController {
         view.addObject("repoUrl", session.runner().repoUrl());
         view.addObject("status", session.status());
         view.addObject("messages", session.messages());
-        view.addObject("devContainerUri", session.runner().containerLaunch().devContainerUri());
+        view.addObject("devContainerUri", workspaceUri(session));
         view.addObject("vscodeReady", session.isReady());
         view.addObject("promptable", session.isReady());
         view.addObject("pendingQuestion", session.pendingQuestion());
@@ -284,11 +284,19 @@ public class RunnerWebController {
         view.addObject("repoUrl", session.runner().repoUrl());
         view.addObject("status", session.status());
         view.addObject("messages", session.messages());
-        view.addObject("devContainerUri", session.runner().containerLaunch().devContainerUri());
+        view.addObject("devContainerUri", workspaceUri(session));
         view.addObject("vscodeReady", session.isReady());
         view.addObject("promptable", session.isReady());
         view.addObject("pendingQuestion", session.pendingQuestion());
         return view;
+    }
+
+    private String workspaceUri(RunnerSession session) {
+        if (session.runner().runtimeInstance() == null
+                || session.runner().runtimeInstance().workspaceAccess() == null) {
+            return null;
+        }
+        return session.runner().runtimeInstance().workspaceAccess().uri();
     }
 
     private void sendPrompt(RunnerSession session, String prompt) {

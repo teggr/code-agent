@@ -13,7 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-import com.teggr.codeagent.docker.DockerRunnerProperties;
+import com.teggr.codeagent.agent.runtime.docker.DockerAgentRuntimeProperties;
 
 class GitHubRepositoryServiceTest {
 
@@ -21,7 +21,7 @@ class GitHubRepositoryServiceTest {
     void findsAccessibleRepositoriesAndFiltersByName() {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.github.com");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        DockerRunnerProperties properties = new DockerRunnerProperties();
+        DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
         properties.setGitToken("test-token");
         GitHubRepositoryService service = new GitHubRepositoryService(builder, properties);
 
@@ -51,7 +51,7 @@ class GitHubRepositoryServiceTest {
         void searchesAllPagesWhenMatchingRepositoryIsNotRecentlyUpdated() {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.github.com");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        DockerRunnerProperties properties = new DockerRunnerProperties();
+        DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
         properties.setGitToken("test-token");
         GitHubRepositoryService service = new GitHubRepositoryService(builder, properties);
         String firstPage = "[" + String.join(",", java.util.Collections.nCopies(100,
@@ -76,7 +76,7 @@ class GitHubRepositoryServiceTest {
 
     @Test
     void reportsUnavailableWhenNoGitHubTokenIsConfigured() {
-        DockerRunnerProperties properties = new DockerRunnerProperties();
+        DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
         GitHubRepositoryService service = new GitHubRepositoryService(RestClient.builder(), properties);
 
         GitHubRepositoryService.RepositoryPage result = service.findRepositories("", 1);

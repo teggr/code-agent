@@ -1,8 +1,9 @@
-package com.teggr.codeagent.docker;
+package com.teggr.codeagent.agent.runtime.docker;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -21,10 +22,16 @@ import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Volume;
+import com.teggr.codeagent.agent.GitRepositoryWorkspace;
+import com.teggr.codeagent.agent.runtime.AgentRuntime;
+import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
+import com.teggr.codeagent.agent.runtime.AgentRuntimeRequest;
+import com.teggr.codeagent.agent.runtime.DiscoveredAgent;
+import com.teggr.codeagent.agent.runtime.WorkspaceAccess;
 
 /** Launches and tears down the code-agent-runner container that serves the Copilot CLI. */
 @Service
-public class DockerRunnerService {
+public class DockerAgentRuntime implements AgentRuntime {
 
     /** Label applied to every runner container so a restarted application can find and adopt it. */
     static final String MANAGED_LABEL = "codeagent.managed";
@@ -45,14 +52,21 @@ public class DockerRunnerService {
             Pattern.compile("^https://github\\.com/[A-Za-z0-9][A-Za-z0-9-]*/([A-Za-z0-9._-]+?)(?:\\.git)?$");
 
     private final DockerClient dockerClient;
-    private final DockerRunnerProperties properties;
+    private final DockerAgentRuntimeProperties properties;
 
-    public DockerRunnerService(DockerClient dockerClient, DockerRunnerProperties properties) {
+    public DockerAgentRuntime(DockerClient dockerClient, DockerAgentRuntimeProperties properties) {
         this.dockerClient = dockerClient;
         this.properties = properties;
     }
 
-    public ContainerLaunch launch(String gitRepoUrl, String runnerId) throws Exception {
+    @Override
+    public AgentRuntimeInstance provision(AgentRuntimeRequest request) throws Exception {
+        if (!(request.workspace() instanceof GitRepositoryWorkspace workspace)) {
+            throw new IllegalArgumentException("Docker runtime does not support workspace type "
+                    + request.workspace().getClass().getName());
+        }
+        String gitRepoUrl = workspace.repositoryUrl();
+        String runnerId = request.agentId();
         String image = properties.getImage();
         String gitToken = properties.getGitToken();
         String copilotToken = properties.getCopilotToken();
@@ -92,15 +106,15 @@ public class DockerRunnerService {
 
             dockerClient.startContainerCmd(containerId).exec();
 
-            ContainerLaunch launch = new ContainerLaunch(containerId,
+                AgentRuntimeInstance instance = runtimeInstance(containerId,
                     getAllocatedHostPort(containerId, exposedPort), workspacePath);
-            System.out.println("Container started with ID: " + launch.containerId()
-                    + " on host port " + launch.hostPort());
+                System.out.println("Container started with ID: " + instance.runtimeId()
+                    + " on host port " + instance.harnessPort());
             System.out.println("Open workspace in VS Code (attached container):");
-            System.out.println("  CLI: " + launch.devContainerCliCommand());
-            System.out.println("  URL: " + launch.devContainerUri());
+                System.out.println("  CLI: " + instance.workspaceAccess().cliCommand());
+                System.out.println("  URL: " + instance.workspaceAccess().uri());
 
-            return launch;
+                return instance;
         } catch (Exception e) {
             String message = e.getMessage();
             if (message != null && (message.contains("pull access denied") || message.contains("image not found"))) {
@@ -133,7 +147,8 @@ public class DockerRunnerService {
     }
 
     /** Stops and deletes the container along with everything in its workspace. */
-    public void remove(String containerId) {
+    @Override
+    public void delete(String containerId) {
         stop(containerId);
         try {
             dockerClient.removeContainerCmd(containerId).exec();
@@ -144,11 +159,13 @@ public class DockerRunnerService {
     }
 
     /** Starts a stopped runner container again; Docker publishes a new host port, so it is re-read here. */
-    public ContainerLaunch restart(String containerId, String workspacePath) {
+    @Override
+    public AgentRuntimeInstance start(AgentRuntimeInstance instance) {
+        String containerId = instance.runtimeId();
         dockerClient.startContainerCmd(containerId).exec();
         int hostPort = getAllocatedHostPort(containerId, ExposedPort.tcp(AGENT_PORT));
         System.out.println("Container " + containerId + " restarted on host port " + hostPort);
-        return new ContainerLaunch(containerId, hostPort, workspacePath);
+        return runtimeInstance(containerId, hostPort, instance.workingDirectory());
     }
 
     /**
@@ -194,20 +211,21 @@ public class DockerRunnerService {
      * again and reconnected to. Containers predating the identity labels cannot be adopted (their
      * runner id and repository are unknown), so they are deleted here.
      */
-    public List<ManagedContainer> listManaged() {
+    @Override
+    public List<DiscoveredAgent> discover() {
         List<Container> containers = dockerClient.listContainersCmd()
             .withShowAll(true)
             .withLabelFilter(Map.of(MANAGED_LABEL, "true"))
             .exec();
 
-        List<ManagedContainer> managed = new ArrayList<>();
+        List<DiscoveredAgent> managed = new ArrayList<>();
         for (Container container : containers) {
             Map<String, String> labels = container.getLabels() == null ? Map.of() : container.getLabels();
             String runnerId = labels.get(RUNNER_ID_LABEL);
             if (runnerId == null || runnerId.isBlank()) {
                 System.out.println("Removing unidentifiable runner container " + container.getId()
                         + " left by an older version");
-                remove(container.getId());
+                delete(container.getId());
                 continue;
             }
 
@@ -220,15 +238,31 @@ public class DockerRunnerService {
         return managed;
     }
 
-    private ManagedContainer inspectManaged(String containerId, String runnerId, Map<String, String> labels) {
+        private DiscoveredAgent inspectManaged(String containerId, String runnerId, Map<String, String> labels) {
         InspectContainerResponse inspect = dockerClient.inspectContainerCmd(containerId).exec();
         boolean running = Boolean.TRUE.equals(inspect.getState().getRunning());
         String workspacePath = labels.getOrDefault(WORKSPACE_PATH_LABEL, "/workspace");
+        String repoUrl = labels.getOrDefault(REPO_URL_LABEL, "");
         // Docker assigns a new host port whenever it restarts the container, so it is never remembered.
         int hostPort = running ? getAllocatedHostPort(inspect, ExposedPort.tcp(AGENT_PORT)) : 0;
-        return new ManagedContainer(runnerId, labels.getOrDefault(REPO_URL_LABEL, ""),
-                new ContainerLaunch(containerId, hostPort, workspacePath), running);
+        return new DiscoveredAgent(runnerId, new GitRepositoryWorkspace(repoUrl),
+            runtimeInstance(containerId, hostPort, workspacePath), running);
     }
+
+        private static AgentRuntimeInstance runtimeInstance(String containerId, int hostPort, String workspacePath) {
+        String encodedContainerId = HexFormat.of().formatHex(shortContainerId(containerId)
+            .getBytes(StandardCharsets.UTF_8));
+        WorkspaceAccess access = new WorkspaceAccess(
+            "vscode://vscode-remote/attached-container+" + encodedContainerId + workspacePath
+                + "?windowId=_blank",
+            "code --new-window --folder-uri vscode-remote://attached-container+" + encodedContainerId
+                + workspacePath);
+        return new AgentRuntimeInstance(containerId, hostPort, workspacePath, access);
+        }
+
+        private static String shortContainerId(String containerId) {
+        return containerId.length() > 12 ? containerId.substring(0, 12) : containerId;
+        }
 
     /**
      * Resolves the bind mount that gives the runner container access to the host's Docker daemon

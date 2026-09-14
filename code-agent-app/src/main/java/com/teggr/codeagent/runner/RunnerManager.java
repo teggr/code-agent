@@ -17,24 +17,26 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.teggr.codeagent.harness.AgentHarness;
 import com.teggr.codeagent.harness.AgentHarnessFactory;
-import com.teggr.codeagent.docker.ContainerLaunch;
-import com.teggr.codeagent.docker.DockerRunnerService;
-import com.teggr.codeagent.docker.ManagedContainer;
+import com.teggr.codeagent.agent.GitRepositoryWorkspace;
+import com.teggr.codeagent.agent.runtime.AgentRuntime;
+import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
+import com.teggr.codeagent.agent.runtime.AgentRuntimeRequest;
+import com.teggr.codeagent.agent.runtime.DiscoveredAgent;
 
 /** Tracks the set of active runners, allowing multiple runners per repository. */
 @Service
 public class RunnerManager {
 
-    private final DockerRunnerService dockerRunnerService;
+    private final AgentRuntime agentRuntime;
     private final AgentHarnessFactory agentHarnessFactory;
     private final RunnerEventPublisher eventPublisher;
     private final Map<String, RunnerSession> activeRunners = new ConcurrentHashMap<>();
     private final Map<String, Map<String, RunnerSession>> sessionsByRunner = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
-    public RunnerManager(DockerRunnerService dockerRunnerService, AgentHarnessFactory agentHarnessFactory,
+    public RunnerManager(AgentRuntime agentRuntime, AgentHarnessFactory agentHarnessFactory,
             RunnerEventPublisher eventPublisher) {
-        this.dockerRunnerService = dockerRunnerService;
+        this.agentRuntime = agentRuntime;
         this.agentHarnessFactory = agentHarnessFactory;
         this.eventPublisher = eventPublisher;
     }
@@ -77,7 +79,7 @@ public class RunnerManager {
             throw new IllegalStateException("Runner " + runnerId + " has no connected agent");
         }
         RunnerSession session = new RunnerSession(new Runner(runnerId, owner.runner().repoUrl(),
-                owner.runner().containerLaunch(), harness));
+            owner.runner().runtimeInstance(), harness));
         wireEvents(session);
         session.attachAgent(harness.createSession(session.id()));
         session.setStatus(RunnerStatus.IDLE);
@@ -130,19 +132,20 @@ public class RunnerManager {
 
     public Runner start(String repoUrl) throws Exception {
         String runnerId = UUID.randomUUID().toString();
-        ContainerLaunch containerLaunch = dockerRunnerService.launch(repoUrl, runnerId);
+        AgentRuntimeInstance runtimeInstance = agentRuntime.provision(new AgentRuntimeRequest(runnerId,
+                new GitRepositoryWorkspace(repoUrl)));
 
         AgentHarness harness;
         try {
-            harness = agentHarnessFactory.connect(containerLaunch.hostPort(),
-                    containerLaunch.workspacePath(),
-                    () -> dockerRunnerService.verifyRunning(containerLaunch.containerId()));
+            harness = agentHarnessFactory.connect(runtimeInstance.harnessPort(),
+                    runtimeInstance.workingDirectory(),
+                    () -> agentRuntime.verifyRunning(runtimeInstance.runtimeId()));
         } catch (Exception e) {
-            dockerRunnerService.remove(containerLaunch.containerId());
+            agentRuntime.delete(runtimeInstance.runtimeId());
             throw e;
         }
 
-        Runner runner = new Runner(runnerId, repoUrl, containerLaunch, harness);
+        Runner runner = new Runner(runnerId, repoUrl, runtimeInstance, harness);
         RunnerSession session = new RunnerSession(runner);
         wireEvents(session);
         session.attachAgent(harness.createSession(session.id()));
@@ -154,7 +157,7 @@ public class RunnerManager {
 
     public RunnerSession startAsync(String repoUrl, String prompt) {
         String runnerId = UUID.randomUUID().toString();
-        Runner placeholder = new Runner(runnerId, repoUrl, new ContainerLaunch("pending", 0), null);
+        Runner placeholder = new Runner(runnerId, repoUrl, null, null);
         RunnerSession session = new RunnerSession(placeholder);
         wireEvents(session);
         session.addMessage("user", prompt);
@@ -163,17 +166,18 @@ public class RunnerManager {
         eventPublisher.publishRunnerList();
 
         executor.submit(() -> {
-            ContainerLaunch containerLaunch = null;
+            AgentRuntimeInstance runtimeInstance = null;
             AgentHarness harness = null;
             try {
                 System.out.println("[runner " + runnerId + "] Launching container for " + repoUrl);
-                ContainerLaunch launched = dockerRunnerService.launch(repoUrl, runnerId);
-                containerLaunch = launched;
-                System.out.println("[runner " + runnerId + "] Container " + launched.containerId()
-                        + " on host port " + launched.hostPort() + "; connecting agent");
-                harness = agentHarnessFactory.connect(launched.hostPort(),
-                        launched.workspacePath(),
-                        () -> dockerRunnerService.verifyRunning(launched.containerId()));
+            AgentRuntimeInstance launched = agentRuntime.provision(new AgentRuntimeRequest(runnerId,
+                new GitRepositoryWorkspace(repoUrl)));
+            runtimeInstance = launched;
+            System.out.println("[runner " + runnerId + "] Runtime " + launched.runtimeId()
+                + " on host port " + launched.harnessPort() + "; connecting agent");
+            harness = agentHarnessFactory.connect(launched.harnessPort(),
+                launched.workingDirectory(),
+                () -> agentRuntime.verifyRunning(launched.runtimeId()));
                 Runner startedRunner = new Runner(runnerId, repoUrl, launched, harness);
                 session.setRunner(startedRunner);
                 eventPublisher.publishVscodeLink(session);
@@ -186,8 +190,8 @@ public class RunnerManager {
                 System.err.println("[runner " + runnerId + "] Failed: " + e.getMessage());
                 e.printStackTrace();
                 closeAfterFailedStart(harness, runnerId);
-                if (containerLaunch != null) {
-                    dockerRunnerService.remove(containerLaunch.containerId());
+                if (runtimeInstance != null) {
+                    agentRuntime.delete(runtimeInstance.runtimeId());
                 }
                 session.setStatus(RunnerStatus.FAILED);
                 session.addMessage("assistant", "Error starting runner: " + e.getMessage());
@@ -222,8 +226,8 @@ public class RunnerManager {
      * Copilot sessions from the runner container when available.
      */
     public void adoptExisting() {
-        for (ManagedContainer managed : dockerRunnerService.listManaged()) {
-            if (activeRunners.containsKey(managed.runnerId())) {
+        for (DiscoveredAgent managed : agentRuntime.discover()) {
+            if (activeRunners.containsKey(managed.agentId())) {
                 continue;
             }
             executor.submit(() -> adoptManaged(managed));
@@ -239,21 +243,19 @@ public class RunnerManager {
         }
         session.setStatus(RunnerStatus.RECONNECTING);
         eventPublisher.publishRunnerList();
-        executor.submit(() -> reconnect(session, session.runner().containerLaunch(), true));
+        executor.submit(() -> reconnect(session, session.runner().runtimeInstance(), true));
     }
 
-    private void reconnect(RunnerSession session, ContainerLaunch launch, boolean startContainer) {
+    private void reconnect(RunnerSession session, AgentRuntimeInstance instance, boolean startRuntime) {
         String runnerId = session.runner().id();
         String repoUrl = session.runner().repoUrl();
         try {
-            ContainerLaunch connected = startContainer
-                    ? dockerRunnerService.restart(launch.containerId(), launch.workspacePath())
-                    : launch;
-            System.out.println("[runner " + runnerId + "] Connecting to container "
-                    + connected.containerId() + " on host port " + connected.hostPort());
-            AgentHarness harness = agentHarnessFactory.connect(connected.hostPort(),
-                    connected.workspacePath(),
-                    () -> dockerRunnerService.verifyRunning(connected.containerId()));
+                AgentRuntimeInstance connected = startRuntime ? agentRuntime.start(instance) : instance;
+                System.out.println("[runner " + runnerId + "] Connecting to runtime "
+                    + connected.runtimeId() + " on host port " + connected.harnessPort());
+                AgentHarness harness = agentHarnessFactory.connect(connected.harnessPort(),
+                    connected.workingDirectory(),
+                    () -> agentRuntime.verifyRunning(connected.runtimeId()));
             Runner connectedRunner = new Runner(runnerId, repoUrl, connected, harness);
             for (RunnerSession child : sessions(runnerId)) {
                 child.setRunner(connectedRunner);
@@ -270,15 +272,15 @@ public class RunnerManager {
         eventPublisher.publishRunnerList();
     }
 
-    private void adoptManaged(ManagedContainer managed) {
-        String runnerId = managed.runnerId();
-        String repoUrl = managed.repoUrl();
+        private void adoptManaged(DiscoveredAgent managed) {
+        String runnerId = managed.agentId();
+        String repoUrl = ((GitRepositoryWorkspace) managed.workspace()).repositoryUrl();
         try {
-            ContainerLaunch connected = managed.running()
-                    ? managed.launch()
-                    : dockerRunnerService.restart(managed.launch().containerId(), managed.launch().workspacePath());
-            AgentHarness harness = agentHarnessFactory.connect(connected.hostPort(), connected.workspacePath(),
-                    () -> dockerRunnerService.verifyRunning(connected.containerId()));
+            AgentRuntimeInstance connected = managed.running()
+                ? managed.instance()
+                : agentRuntime.start(managed.instance());
+            AgentHarness harness = agentHarnessFactory.connect(connected.harnessPort(), connected.workingDirectory(),
+                () -> agentRuntime.verifyRunning(connected.runtimeId()));
             Runner connectedRunner = new Runner(runnerId, repoUrl, connected, harness);
             List<String> sessionIds = harness.listSessionIds();
             if (sessionIds == null || sessionIds.isEmpty()) {
@@ -323,7 +325,7 @@ public class RunnerManager {
         for (RunnerSession child : sessions(runnerId)) {
             child.detachAgent();
         }
-        dockerRunnerService.stop(session.runner().containerLaunch().containerId());
+        agentRuntime.stop(session.runner().runtimeInstance().runtimeId());
         for (RunnerSession child : sessions(runnerId)) {
             child.setStatus(RunnerStatus.STOPPED);
         }
@@ -339,7 +341,7 @@ public class RunnerManager {
         List<RunnerSession> children = List.copyOf(sessions(runnerId));
         sessionsByRunner.remove(runnerId);
         closeAgent(session);
-        dockerRunnerService.remove(session.runner().containerLaunch().containerId());
+        agentRuntime.delete(session.runner().runtimeInstance().runtimeId());
         for (RunnerSession child : children) {
             child.setStatus(RunnerStatus.REMOVED);
         }

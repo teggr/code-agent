@@ -1,4 +1,4 @@
-package com.teggr.codeagent.docker;
+package com.teggr.codeagent.agent.runtime.docker;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

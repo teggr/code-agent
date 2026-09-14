@@ -84,7 +84,7 @@ class RunnerEventPublisherTest {
             }
 
             @Override
-            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.agent.Question question) {
+            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.harness.Question question) {
                 publisher.publishQuestion(s, question);
             }
         });
@@ -112,7 +112,7 @@ class RunnerEventPublisherTest {
             }
 
             @Override
-            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.agent.Question question) {
+            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.harness.Question question) {
                 publisher.publishQuestion(s, question);
             }
         });

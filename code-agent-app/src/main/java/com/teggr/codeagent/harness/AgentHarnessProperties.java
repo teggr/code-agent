@@ -1,4 +1,4 @@
-package com.teggr.codeagent.agent;
+package com.teggr.codeagent.harness;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

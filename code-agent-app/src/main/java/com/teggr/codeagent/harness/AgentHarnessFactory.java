@@ -1,4 +1,4 @@
-package com.teggr.codeagent.agent;
+package com.teggr.codeagent.harness;
 
 /** Connects to a running code agent server, retrying until it becomes available. */
 public interface AgentHarnessFactory {

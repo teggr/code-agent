@@ -28,7 +28,7 @@ public class FragmentRenderer {
         return templateEngine.process("fragments", Set.of("statusBadge"), context);
     }
 
-    public String pendingQuestion(String runnerId, com.teggr.codeagent.agent.Question question) {
+    public String pendingQuestion(String runnerId, com.teggr.codeagent.harness.Question question) {
         Context context = new Context();
         context.setVariable("runnerId", runnerId);
         context.setVariable("question", question);

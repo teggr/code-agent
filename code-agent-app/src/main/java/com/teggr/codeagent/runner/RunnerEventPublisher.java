@@ -65,7 +65,7 @@ public class RunnerEventPublisher {
         publishRunnerList();
     }
 
-    public void publishQuestion(RunnerSession session, com.teggr.codeagent.agent.Question question) {
+    public void publishQuestion(RunnerSession session, com.teggr.codeagent.harness.Question question) {
         String html = fragments.pendingQuestion(session.id(), question);
         sendAll(perSession.get(session.id()), "question", html);
         sendAll(perRunner.get(session.runner().id()), "question", fragments.pendingQuestion(session.runner().id(), question));

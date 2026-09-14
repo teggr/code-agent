@@ -1,4 +1,4 @@
-package com.teggr.codeagent.agent;
+package com.teggr.codeagent.harness;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -11,9 +11,9 @@ import java.util.function.Function;
  * <p>Register listeners before calling {@link #sendPrompt}, since a prompt's events may
  * otherwise be missed.
  */
-public interface AgentSession {
+public interface HarnessSession {
 
-    List<AgentHistoryEntry> history() throws Exception;
+    List<HarnessHistoryEntry> history() throws Exception;
 
     void sendPrompt(String prompt) throws Exception;
 

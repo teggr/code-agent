@@ -1,4 +1,4 @@
-package com.teggr.codeagent.agent.copilot;
+package com.teggr.codeagent.harness.copilot;
 
 import java.util.List;
 import java.util.UUID;
@@ -15,9 +15,9 @@ import com.github.copilot.rpc.ElicitationResultAction;
 import com.github.copilot.rpc.PermissionHandler;
 import com.github.copilot.rpc.SessionConfig;
 import com.github.copilot.rpc.UserInputResponse;
-import com.teggr.codeagent.agent.AgentHarness;
-import com.teggr.codeagent.agent.AgentSession;
-import com.teggr.codeagent.agent.Question;
+import com.teggr.codeagent.harness.AgentHarness;
+import com.teggr.codeagent.harness.HarnessSession;
+import com.teggr.codeagent.harness.Question;
 
 class CopilotAgentHarness implements AgentHarness {
 
@@ -30,19 +30,19 @@ class CopilotAgentHarness implements AgentHarness {
     }
 
     @Override
-    public AgentSession createSession(String sessionId) throws Exception {
+    public HarnessSession createSession(String sessionId) throws Exception {
         AtomicReference<Function<Question, CompletableFuture<String>>> questionHandlerRef = questionHandlerRef();
         var session = client.createSession(baseSessionConfig(questionHandlerRef)
                 .setSessionId(sessionId))
                 .get();
-        return new CopilotAgentSession(session, questionHandlerRef);
+        return new CopilotHarnessSession(session, questionHandlerRef);
     }
 
     @Override
-    public AgentSession resumeSession(String sessionId) throws Exception {
+    public HarnessSession resumeSession(String sessionId) throws Exception {
         AtomicReference<Function<Question, CompletableFuture<String>>> questionHandlerRef = questionHandlerRef();
         var session = client.resumeSession(sessionId, baseResumeSessionConfig(questionHandlerRef)).get();
-        return new CopilotAgentSession(session, questionHandlerRef);
+        return new CopilotHarnessSession(session, questionHandlerRef);
     }
 
     @Override

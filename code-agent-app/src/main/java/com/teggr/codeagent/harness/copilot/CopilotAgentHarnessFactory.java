@@ -1,4 +1,4 @@
-package com.teggr.codeagent.agent.copilot;
+package com.teggr.codeagent.harness.copilot;
 
 import java.util.concurrent.TimeUnit;
 
@@ -6,9 +6,9 @@ import org.springframework.stereotype.Service;
 
 import com.github.copilot.CopilotClient;
 import com.github.copilot.rpc.CopilotClientOptions;
-import com.teggr.codeagent.agent.AgentHarness;
-import com.teggr.codeagent.agent.AgentHarnessFactory;
-import com.teggr.codeagent.agent.AgentHarnessProperties;
+import com.teggr.codeagent.harness.AgentHarness;
+import com.teggr.codeagent.harness.AgentHarnessFactory;
+import com.teggr.codeagent.harness.AgentHarnessProperties;
 
 /** Connects to the Copilot CLI server, retrying while the runner container is still starting up. */
 @Service

@@ -1,4 +1,4 @@
-package com.teggr.codeagent.agent.copilot;
+package com.teggr.codeagent.harness.copilot;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -43,30 +43,30 @@ import com.github.copilot.generated.SubagentStartedEvent;
 import com.github.copilot.generated.ToolExecutionCompleteEvent;
 import com.github.copilot.generated.ToolExecutionStartEvent;
 import com.github.copilot.rpc.MessageOptions;
-import com.teggr.codeagent.agent.AgentEvent;
-import com.teggr.codeagent.agent.AgentHistoryEntry;
-import com.teggr.codeagent.agent.AgentSession;
-import com.teggr.codeagent.agent.Question;
-import com.teggr.codeagent.agent.ToolActivity;
+import com.teggr.codeagent.harness.AgentEvent;
+import com.teggr.codeagent.harness.HarnessHistoryEntry;
+import com.teggr.codeagent.harness.HarnessSession;
+import com.teggr.codeagent.harness.Question;
+import com.teggr.codeagent.harness.ToolActivity;
 
-class CopilotAgentSession implements AgentSession {
+class CopilotHarnessSession implements HarnessSession {
 
     private final CopilotSession session;
     private final AtomicReference<Function<Question, CompletableFuture<String>>> questionHandlerRef;
     private final Map<String, String> toolNamesByCallId = new ConcurrentHashMap<>();
 
-    CopilotAgentSession(CopilotSession session,
+    CopilotHarnessSession(CopilotSession session,
             AtomicReference<Function<Question, CompletableFuture<String>>> questionHandlerRef) {
         this.session = session;
         this.questionHandlerRef = questionHandlerRef;
     }
 
     @Override
-    public List<AgentHistoryEntry> history() throws Exception {
+    public List<HarnessHistoryEntry> history() throws Exception {
         Map<String, String> historicalToolNamesByCallId = new ConcurrentHashMap<>();
-        List<AgentHistoryEntry> history = new ArrayList<>();
+        List<HarnessHistoryEntry> history = new ArrayList<>();
         for (SessionEvent event : session.getMessages().get()) {
-            AgentHistoryEntry entry = toHistoryEntry(event, historicalToolNamesByCallId);
+            HarnessHistoryEntry entry = toHistoryEntry(event, historicalToolNamesByCallId);
             if (entry != null) {
                 history.add(entry);
             }
@@ -170,22 +170,22 @@ class CopilotAgentSession implements AgentSession {
         };
     }
 
-    private static AgentHistoryEntry toHistoryEntry(SessionEvent event, Map<String, String> toolNamesByCallId) {
+    private static HarnessHistoryEntry toHistoryEntry(SessionEvent event, Map<String, String> toolNamesByCallId) {
         return switch (event) {
-            case UserMessageEvent e -> new AgentHistoryEntry("user", e.getData().content());
-            case AssistantMessageEvent e -> new AgentHistoryEntry("assistant", e.getData().content());
+            case UserMessageEvent e -> new HarnessHistoryEntry("user", e.getData().content());
+            case AssistantMessageEvent e -> new HarnessHistoryEntry("assistant", e.getData().content());
             case ToolExecutionStartEvent e -> {
                 toolNamesByCallId.put(e.getData().toolCallId(), e.getData().toolName());
-                yield new AgentHistoryEntry("tool", "Running " + e.getData().toolName() + "...");
+                yield new HarnessHistoryEntry("tool", "Running " + e.getData().toolName() + "...");
             }
             case ToolExecutionCompleteEvent e -> {
                 String toolName = toolNamesByCallId.getOrDefault(e.getData().toolCallId(), e.getData().toolCallId());
-                yield new AgentHistoryEntry("tool",
+                yield new HarnessHistoryEntry("tool",
                         ((e.getData().success() == null || e.getData().success()) ? "Done " : "Failed ") + toolName);
             }
             default -> {
                 String summary = summarize(event);
-                yield summary == null ? null : new AgentHistoryEntry("system", summary);
+                yield summary == null ? null : new HarnessHistoryEntry("system", summary);
             }
         };
     }

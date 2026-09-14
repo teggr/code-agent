@@ -15,8 +15,8 @@ import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import com.teggr.codeagent.agent.AgentHarness;
-import com.teggr.codeagent.agent.AgentHarnessFactory;
+import com.teggr.codeagent.harness.AgentHarness;
+import com.teggr.codeagent.harness.AgentHarnessFactory;
 import com.teggr.codeagent.docker.ContainerLaunch;
 import com.teggr.codeagent.docker.DockerRunnerService;
 import com.teggr.codeagent.docker.ManagedContainer;
@@ -57,7 +57,7 @@ public class RunnerManager {
             }
 
             @Override
-            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.agent.Question question) {
+            public void onQuestionChange(RunnerSession s, com.teggr.codeagent.harness.Question question) {
                 eventPublisher.publishQuestion(s, question);
             }
         });

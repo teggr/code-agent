@@ -9,9 +9,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.teggr.codeagent.agent.AgentSession;
-import com.teggr.codeagent.agent.AgentHistoryEntry;
-import com.teggr.codeagent.agent.Question;
+import com.teggr.codeagent.harness.HarnessHistoryEntry;
+import com.teggr.codeagent.harness.HarnessSession;
+import com.teggr.codeagent.harness.Question;
 
 public class RunnerSession {
 
@@ -19,7 +19,7 @@ public class RunnerSession {
     private volatile Runner runner;
     private final List<ChatMessage> messages = new CopyOnWriteArrayList<>();
     private final AtomicReference<RunnerStatus> status = new AtomicReference<>(RunnerStatus.STARTING);
-    private volatile AgentSession agentSession;
+    private volatile HarnessSession agentSession;
     private volatile RunnerSessionListener listener;
     private final Map<String, CompletableFuture<String>> pendingQuestions = new ConcurrentHashMap<>();
     private volatile Question pendingQuestion;
@@ -43,7 +43,7 @@ public class RunnerSession {
     }
 
     /** Attaches the agent session and registers message listeners exactly once. */
-    public void attachAgent(AgentSession agentSession) {
+    public void attachAgent(HarnessSession agentSession) {
         this.agentSession = agentSession;
         loadHistory(agentSession);
         agentSession.onMessage(content -> addMessage("assistant", content));
@@ -71,16 +71,16 @@ public class RunnerSession {
         });
     }
 
-    private void loadHistory(AgentSession agentSession) {
+    private void loadHistory(HarnessSession agentSession) {
         if (!messages.isEmpty()) {
             return;
         }
         try {
-            List<AgentHistoryEntry> history = agentSession.history();
+            List<HarnessHistoryEntry> history = agentSession.history();
             if (history == null || history.isEmpty()) {
                 return;
             }
-            for (AgentHistoryEntry entry : history) {
+            for (HarnessHistoryEntry entry : history) {
                 if (entry == null || entry.content() == null || entry.content().isBlank()) {
                     continue;
                 }
@@ -146,7 +146,7 @@ public class RunnerSession {
         }
     }
 
-    public AgentSession agentSession() {
+    public HarnessSession agentSession() {
         return agentSession;
     }
 

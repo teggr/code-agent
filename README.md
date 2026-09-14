@@ -1,4 +1,27 @@
-# cloud-agent-gateway
+# code-agent
+
+## Hosted Agent model
+
+`code-agent-app` manages durable hosted **Agents**. Each Agent has an explicit `WorkspaceSpec`
+(currently only `GitRepositoryWorkspace`), one provisioned `AgentRuntime`, a transient
+`AgentConnection` to the provider-neutral harness, and zero or more `AgentConversation`s.
+Conversation IDs are the persisted Copilot session IDs and survive Agent stop/start cycles.
+
+Agent lifecycle (`PROVISIONING`, `CONNECTING`, `RUNNING`, `STOPPED`, `FAILED`, `REMOVED`) is
+independent from conversation lifecycle (`STARTING`, `IDLE`, `BUSY`, `FAILED`). Canonical browser
+routes are `/agents/{agentId}` and `/agents/{agentId}/conversations/{conversationId}`; there are no
+legacy route aliases.
+
+Configuration ownership follows the same boundaries:
+
+- `codeagent.agent.restore-existing-on-startup` controls hosted Agent restoration.
+- `codeagent.agent.workspace.git.*` controls Git-backed workspace credentials.
+- `codeagent.agent.runtime.docker.*` controls the Docker runtime image and socket.
+- `codeagent.harness.copilot.*` controls Copilot credentials and harness connection behavior.
+
+Runtime discovery recognizes `codeagent.agent.id`. Resources carrying old identity labels are not
+restored and are removed during discovery; clean them up deliberately before rollout if their
+workspaces must be retained.
 
 ## Copilot CLI
 
@@ -8,9 +31,10 @@ To run the Copilot CLI as a server, use:
 copilot --server --port 4321
 ```
 
-## Runner image
+## Runtime image
 
-`code-agent-runner` builds a Docker image used to build code repositories. It is standalone from
+`code-agent-runner` remains the infrastructure artifact name for the Docker image used to build
+code repositories. It is not the hosted Agent domain model. The module is standalone from
 `code-agent-app` — it contains only the Copilot CLI, not the application jar.
 
 ```text
@@ -26,13 +50,13 @@ Skip the image build for a fast Maven validation with `mvnw.cmd -pl code-agent-r
 `-Dmise.version=2025.1.3`. Pin Playwright with `-Dplaywright.version=1.62.1` and Playwright MCP
 with `-Dplaywright-mcp.version=0.0.80`. Pin the VS Code standalone CLI with
 `-Dvscode-cli.version=<version>` (defaults to `latest`). To speed up first attach from desktop
-VS Code, the runner preinstalls the server for the latest VS Code CLI by default. Use
+VS Code, the runtime image preinstalls the server for the latest VS Code CLI by default. Use
 `"-Dvscode-server.commit=<desktop-commit>"` in PowerShell to target a specific desktop build, or
 `"-Dvscode-server.commit=none"` to skip the server preinstall.
 
 Run the application with separate credentials: `GH_TOKEN` must access the repository, while
 `COPILOT_GITHUB_TOKEN` must be a personal-account fine-grained token with the **Copilot Requests**
-account permission. The application supplies the repository credential to the runner as `GH_TOKEN`
+account permission. The application supplies the repository credential to the runtime as `GH_TOKEN`
 for cloning and the Copilot credential as `COPILOT_GITHUB_TOKEN` for agent requests.
 
 ```text
@@ -44,15 +68,15 @@ with the clone as its working directory. `GIT_REF` optionally selects a branch o
 shallow (`--depth 1`), and an existing clone in a mounted `/workspace` volume is updated with
 `git pull --ff-only` instead of being re-cloned. `GH_TOKEN` also authenticates the clone for
 private `https://github.com/` URLs. The repository URL must be in the form
-`https://github.com/<owner>/<repository>[.git]`; before cloning, the runner requires `GH_TOKEN` to
+`https://github.com/<owner>/<repository>[.git]`; before cloning, the runtime requires `GH_TOKEN` to
 resolve the repository through the GitHub API, which succeeds only for repositories the token is
 entitled to.
 
-The runner includes [Mise](https://mise.jdx.dev/) for repository-pinned developer tools. When the
+The runtime image includes [Mise](https://mise.jdx.dev/) for repository-pinned developer tools. When the
 repository root contains `mise.toml`, `.mise/config.toml`, or `.tool-versions`, it runs
 `mise install` before starting Copilot, then starts Copilot through `mise exec`. Provisioning
 failures prevent the server from starting. Repositories without one of those files start with only
-the runner's base tools.
+the runtime image's base tools.
 
 Persist the Mise cache separately from the source checkout by supplying a named volume or bind
 mount for `/mise`:
@@ -87,13 +111,13 @@ Chrome executable (`/opt/google/chrome/chrome`) instead of a Playwright-managed 
 The container starts `copilot --server --port 4321`, which `CopilotClientOptions.setCliUrl` in
 `code-agent-app` connects to.
 
-## Docker inside the runner
+## Docker inside the runtime
 
-The runner image includes the Docker CLI, buildx, and the compose plugin (no daemon), so projects
+The runtime image includes the Docker CLI, buildx, and the compose plugin (no daemon), so projects
 can build images, run local services, or use Testcontainers. The daemon is the host's own, reached
 through a bind-mounted `/var/run/docker.sock` (Docker-outside-of-Docker).
 
-When `code-agent-app` launches the runner it mounts the socket automatically. Detection is based
+When `code-agent-app` provisions the runtime it mounts the socket automatically. Detection is based
 on the daemon's own report: Docker Desktop (Windows/macOS) mounts its Linux VM socket, and a
 native Linux host (e.g. the VPS) mounts the real socket. If no usable socket is found — for
 example Docker Desktop in Windows-container mode — the launch fails with a clear error. Docker
@@ -116,8 +140,8 @@ Two caveats:
 
 - The mounted socket grants root-equivalent control of the host Docker daemon. Only run
   repositories you trust, exactly as if you gave them Docker access on the host directly.
-- Containers started from inside the runner are siblings on the host daemon, so relative bind
-  mounts in a project's compose file resolve against host paths, not the runner's `/workspace`.
+- Containers started from inside the runtime are siblings on the host daemon, so relative bind
+  mounts in a project's compose file resolve against host paths, not the runtime's `/workspace`.
   Named volumes, networks, image builds, and published ports work as usual.
 
 ## Opening the workspace in VS Code
@@ -126,7 +150,7 @@ You can attach to the container's `/workspace` in VS Code either locally or remo
 
 ### Local container attach (Dev Containers)
 
-When `code-agent-app` launches the runner container, it logs the direct VS Code attach link and CLI command:
+When `code-agent-app` provisions the runtime container, it logs the direct VS Code attach link and CLI command:
 
 ```text
 Open workspace in VS Code (attached container):
@@ -139,7 +163,7 @@ Opening the URL or running the CLI command attaches VS Code directly to the cont
 
 ### Remote container access (VS Code Tunnels)
 
-The runner image bakes in the standalone VS Code CLI (`code`). When running on a remote cloud VPS,
+The runtime image bakes in the standalone VS Code CLI (`code`). When running on a remote cloud VPS,
 you can start a secure tunnel from inside the container:
 
 ```bash

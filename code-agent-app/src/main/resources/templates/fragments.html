@@ -35,24 +35,23 @@
             hx-swap="innerHTML" th:hx-vals="|{&quot;query&quot;:&quot;${query}&quot;,&quot;page&quot;:${nextPage}}|">Load more</button>
   </div>
 
-  <!-- One chat message; appended via hx-swap="beforeend" on the runner page. -->
+  <!-- One chat message; appended via hx-swap="beforeend" on the conversation page. -->
   <div th:fragment="message(message)" class="msg" th:classappend="'msg-' + ${message.role}">
     <span class="role" th:text="${message.role}">user</span>
     <span th:text="${message.content}">content</span>
   </div>
 
-  <!-- Status badge; outerHTML-swapped in place on the runner page. Must re-declare
-       sse-swap so the replacement element keeps its event binding after each swap. -->
-  <span th:fragment="statusBadge(status)" class="status" id="runner-status" sse-swap="status" hx-swap="outerHTML" th:text="${status}">IDLE</span>
+    <span th:fragment="conversationStatusBadge(conversationStatus)" class="status" id="conversation-status"
+      sse-swap="conversationStatus" hx-swap="outerHTML" th:text="${conversationStatus}">IDLE</span>
 
   <!-- The agent's pending question, if any; outerHTML-swapped so it appears/clears live.
        Must re-declare sse-swap on every render, including the empty state, so it keeps listening. -->
-  <div th:fragment="pendingQuestion(runnerId, question)" id="pending-question" sse-swap="question" hx-swap="outerHTML">
+  <div th:fragment="pendingQuestion(agentId, conversationId, question)" id="pending-question" sse-swap="question" hx-swap="outerHTML">
     <div class="panel" th:if="${question != null}">
       <div class="row"><strong>Agent is asking:</strong></div>
       <div class="row" th:text="${question.prompt}">question</div>
       <form th:if="${question.choices != null and !#lists.isEmpty(question.choices)}"
-            method="post" th:action="|/runners/${runnerId}/answer|">
+            method="post" th:action="|/agents/${agentId}/conversations/${conversationId}/answer|">
         <input type="hidden" name="questionId" th:value="${question.id}"/>
         <div class="row">
           <button class="button" type="submit" name="answer" th:each="choice : ${question.choices}"
@@ -60,7 +59,7 @@
         </div>
       </form>
       <form th:unless="${question.choices != null and !#lists.isEmpty(question.choices)}"
-            method="post" th:action="|/runners/${runnerId}/answer|">
+            method="post" th:action="|/agents/${agentId}/conversations/${conversationId}/answer|">
         <input type="hidden" name="questionId" th:value="${question.id}"/>
         <div class="row">
           <input type="text" name="answer" placeholder="Your answer"/>
@@ -70,31 +69,26 @@
     </div>
   </div>
 
-  <!-- VS Code link; disabled until the real container is up, since the placeholder devContainerUri
-       points at a nonexistent "pending" container. outerHTML-swapped once the container is ready. -->
-  <a th:fragment="vscodeLink(devContainerUri, ready)" id="vscode-link" sse-swap="vscode" hx-swap="outerHTML"
+    <a th:fragment="vscodeLink(workspaceUri, ready)" id="vscode-link" sse-swap="vscode" hx-swap="outerHTML"
      class="button" th:classappend="${ready} ? '' : ' disabled'"
-     th:href="${ready} ? ${devContainerUri} : '#'"
+      th:href="${ready} ? ${workspaceUri} : '#'"
      th:text="${ready} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
 
-  <!-- Whole runner list; innerHTML-swapped on the dashboard on any runner change. -->
-  <th:block th:fragment="runnerList(runners)">
-    <div th:if="${#lists.isEmpty(runners)}">
-      <p>No active runners.</p>
+  <th:block th:fragment="agentList(agents)">
+    <div th:if="${#lists.isEmpty(agents)}">
+      <p>No hosted agents.</p>
     </div>
-    <div th:unless="${#lists.isEmpty(runners)}">
-      <div class="card" th:each="runnerSession : ${runners}">
+    <div th:unless="${#lists.isEmpty(agents)}">
+      <div class="card" th:each="agent : ${agents}">
         <div>
-          <div><strong>Runner:</strong> <span th:text="${runnerSession.runner.id}">runner-id</span></div>
-          <div class="meta">Repo: <span th:text="${runnerSession.runner.repoUrl}">repo-url</span></div>
-          <div class="meta">Last message: <span th:text="${runnerSession.lastMessage()}">No messages yet</span></div>
+          <div><strong>Agent:</strong> <span th:text="${agent.id}">agent-id</span></div>
+          <div class="meta">Repository: <span th:text="${agent.workspace.repositoryUrl}">repository-url</span></div>
         </div>
         <div class="row">
-          <span class="status" th:text="${runnerSession.status}">IDLE</span>
-          <a class="button" th:href="|/runners/${runnerSession.runner.id}|">Open</a>
-          <a class="button" th:classappend="${runnerSession.ready} ? '' : ' disabled'"
-             th:href="${runnerSession.ready} ? ${runnerSession.runner.runtimeInstance.workspaceAccess.uri} : '#'"
-             th:text="${runnerSession.ready} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
+          <span class="status" th:text="${agent.status}">RUNNING</span>
+          <a class="button" th:href="|/agents/${agent.id}|">Open</a>
+          <a class="button" th:if="${agent.runtimeInstance != null and agent.runtimeInstance.workspaceAccess != null}"
+             th:href="${agent.runtimeInstance.workspaceAccess.uri}">VS Code</a>
         </div>
       </div>
     </div>

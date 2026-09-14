@@ -23,21 +23,22 @@ import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Volume;
 import com.teggr.codeagent.agent.GitRepositoryWorkspace;
+import com.teggr.codeagent.agent.GitRepositoryWorkspaceProperties;
 import com.teggr.codeagent.agent.runtime.AgentRuntime;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeRequest;
 import com.teggr.codeagent.agent.runtime.DiscoveredAgent;
 import com.teggr.codeagent.agent.runtime.WorkspaceAccess;
+import com.teggr.codeagent.harness.copilot.CopilotHarnessProperties;
 
-/** Launches and tears down the code-agent-runner container that serves the Copilot CLI. */
+/** Launches and tears down the Docker runtime that serves the Copilot CLI harness. */
 @Service
 public class DockerAgentRuntime implements AgentRuntime {
 
-    /** Label applied to every runner container so a restarted application can find and adopt it. */
+    /** Label applied to every managed runtime so a restarted application can discover it. */
     static final String MANAGED_LABEL = "codeagent.managed";
 
-    /** Runner identity carried by the container itself, so runner ids survive an application restart. */
-    static final String RUNNER_ID_LABEL = "codeagent.runner.id";
+    static final String AGENT_ID_LABEL = "codeagent.agent.id";
     static final String REPO_URL_LABEL = "codeagent.repo.url";
     static final String WORKSPACE_PATH_LABEL = "codeagent.workspace.path";
     static final String CREATED_AT_LABEL = "codeagent.created-at";
@@ -53,10 +54,15 @@ public class DockerAgentRuntime implements AgentRuntime {
 
     private final DockerClient dockerClient;
     private final DockerAgentRuntimeProperties properties;
+    private final GitRepositoryWorkspaceProperties gitProperties;
+    private final CopilotHarnessProperties copilotProperties;
 
-    public DockerAgentRuntime(DockerClient dockerClient, DockerAgentRuntimeProperties properties) {
+    public DockerAgentRuntime(DockerClient dockerClient, DockerAgentRuntimeProperties properties,
+            GitRepositoryWorkspaceProperties gitProperties, CopilotHarnessProperties copilotProperties) {
         this.dockerClient = dockerClient;
         this.properties = properties;
+        this.gitProperties = gitProperties;
+        this.copilotProperties = copilotProperties;
     }
 
     @Override
@@ -66,10 +72,10 @@ public class DockerAgentRuntime implements AgentRuntime {
                     + request.workspace().getClass().getName());
         }
         String gitRepoUrl = workspace.repositoryUrl();
-        String runnerId = request.agentId();
+        String agentId = request.agentId();
         String image = properties.getImage();
-        String gitToken = properties.getGitToken();
-        String copilotToken = properties.getCopilotToken();
+        String gitToken = gitProperties.getToken();
+        String copilotToken = copilotProperties.getToken();
 
         if (gitToken == null || gitToken.isEmpty()) {
             throw new IllegalStateException("GH_TOKEN environment variable is not set");
@@ -82,7 +88,7 @@ public class DockerAgentRuntime implements AgentRuntime {
         try {
             ExposedPort exposedPort = ExposedPort.tcp(AGENT_PORT);
             Bind dockerSocketBind = resolveDockerSocketBind();
-            System.out.println("Mounting Docker socket into runner: " + dockerSocketBind);
+            System.out.println("Mounting Docker socket into agent runtime: " + dockerSocketBind);
 
             String workspacePath = workspacePath(gitRepoUrl);
 
@@ -93,7 +99,7 @@ public class DockerAgentRuntime implements AgentRuntime {
                     .withBinds(dockerSocketBind)
                 )
                 .withLabels(Map.of(MANAGED_LABEL, "true",
-                    RUNNER_ID_LABEL, runnerId,
+                    AGENT_ID_LABEL, agentId,
                     REPO_URL_LABEL, gitRepoUrl,
                     WORKSPACE_PATH_LABEL, workspacePath,
                     CREATED_AT_LABEL, Instant.now().toString()))
@@ -106,15 +112,15 @@ public class DockerAgentRuntime implements AgentRuntime {
 
             dockerClient.startContainerCmd(containerId).exec();
 
-                AgentRuntimeInstance instance = runtimeInstance(containerId,
+            AgentRuntimeInstance instance = runtimeInstance(containerId,
                     getAllocatedHostPort(containerId, exposedPort), workspacePath);
-                System.out.println("Container started with ID: " + instance.runtimeId()
+            System.out.println("Container started with ID: " + instance.runtimeId()
                     + " on host port " + instance.harnessPort());
             System.out.println("Open workspace in VS Code (attached container):");
-                System.out.println("  CLI: " + instance.workspaceAccess().cliCommand());
-                System.out.println("  URL: " + instance.workspaceAccess().uri());
+            System.out.println("  CLI: " + instance.workspaceAccess().cliCommand());
+            System.out.println("  URL: " + instance.workspaceAccess().uri());
 
-                return instance;
+            return instance;
         } catch (Exception e) {
             String message = e.getMessage();
             if (message != null && (message.contains("pull access denied") || message.contains("image not found"))) {
@@ -158,7 +164,7 @@ public class DockerAgentRuntime implements AgentRuntime {
         }
     }
 
-    /** Starts a stopped runner container again; Docker publishes a new host port, so it is re-read here. */
+    /** Starts a stopped runtime again; Docker publishes a new host port, so it is re-read here. */
     @Override
     public AgentRuntimeInstance start(AgentRuntimeInstance instance) {
         String containerId = instance.runtimeId();
@@ -169,7 +175,7 @@ public class DockerAgentRuntime implements AgentRuntime {
     }
 
     /**
-     * Fails fast when the runner container has already exited, so an entrypoint failure (bad token,
+    * Fails fast when the runtime container has already exited, so an entrypoint failure (bad token,
      * unauthorised repository, clone failure) surfaces as its own error instead of an opaque
      * connection timeout after every retry has been exhausted.
      */
@@ -178,7 +184,7 @@ public class DockerAgentRuntime implements AgentRuntime {
         if (Boolean.TRUE.equals(state.getRunning())) {
             return;
         }
-        throw new IllegalStateException("Runner container " + containerId + " exited with code "
+        throw new IllegalStateException("Agent runtime container " + containerId + " exited with code "
                 + state.getExitCodeLong() + " before the agent server became available. Last output:\n"
                 + tailLogs(containerId));
     }
@@ -207,9 +213,8 @@ public class DockerAgentRuntime implements AgentRuntime {
     }
 
     /**
-     * Finds the runner containers left behind by a previous application run, so they can be started
-     * again and reconnected to. Containers predating the identity labels cannot be adopted (their
-     * runner id and repository are unknown), so they are deleted here.
+    * Finds managed runtime containers left behind by a previous application run. Resources without
+    * canonical Agent identity are deleted rather than interpreted through compatibility behavior.
      */
     @Override
     public List<DiscoveredAgent> discover() {
@@ -221,31 +226,30 @@ public class DockerAgentRuntime implements AgentRuntime {
         List<DiscoveredAgent> managed = new ArrayList<>();
         for (Container container : containers) {
             Map<String, String> labels = container.getLabels() == null ? Map.of() : container.getLabels();
-            String runnerId = labels.get(RUNNER_ID_LABEL);
-            if (runnerId == null || runnerId.isBlank()) {
-                System.out.println("Removing unidentifiable runner container " + container.getId()
-                        + " left by an older version");
+            String agentId = labels.get(AGENT_ID_LABEL);
+            if (agentId == null || agentId.isBlank()) {
+                System.out.println("Removing runtime container without canonical agent identity " + container.getId());
                 delete(container.getId());
                 continue;
             }
 
             try {
-                managed.add(inspectManaged(container.getId(), runnerId, labels));
+                managed.add(inspectManaged(container.getId(), agentId, labels));
             } catch (Exception e) {
-                System.err.println("Unable to inspect runner container " + container.getId() + ": " + e.getMessage());
+                System.err.println("Unable to inspect agent runtime " + container.getId() + ": " + e.getMessage());
             }
         }
         return managed;
     }
 
-        private DiscoveredAgent inspectManaged(String containerId, String runnerId, Map<String, String> labels) {
+        private DiscoveredAgent inspectManaged(String containerId, String agentId, Map<String, String> labels) {
         InspectContainerResponse inspect = dockerClient.inspectContainerCmd(containerId).exec();
         boolean running = Boolean.TRUE.equals(inspect.getState().getRunning());
         String workspacePath = labels.getOrDefault(WORKSPACE_PATH_LABEL, "/workspace");
         String repoUrl = labels.getOrDefault(REPO_URL_LABEL, "");
         // Docker assigns a new host port whenever it restarts the container, so it is never remembered.
         int hostPort = running ? getAllocatedHostPort(inspect, ExposedPort.tcp(AGENT_PORT)) : 0;
-        return new DiscoveredAgent(runnerId, new GitRepositoryWorkspace(repoUrl),
+        return new DiscoveredAgent(agentId, new GitRepositoryWorkspace(repoUrl),
             runtimeInstance(containerId, hostPort, workspacePath), running);
     }
 
@@ -265,8 +269,8 @@ public class DockerAgentRuntime implements AgentRuntime {
         }
 
     /**
-     * Resolves the bind mount that gives the runner container access to the host's Docker daemon
-     * (Docker-outside-of-Docker), so projects in the runner can build images and run services.
+    * Resolves the bind mount that gives the runtime access to the host's Docker daemon
+    * (Docker-outside-of-Docker), so hosted workspaces can build images and run services.
      * The source path is resolved by the daemon, not by this process, so it must be the socket path
      * as seen by the daemon's own host: /var/run/docker.sock under Docker Desktop, native Linux
      * Docker, and Podman machine alike (Podman ships a compatibility symlink there).
@@ -276,11 +280,11 @@ public class DockerAgentRuntime implements AgentRuntime {
 
         if ("windows".equalsIgnoreCase(info.getOsType())) {
             throw new IllegalStateException(
-                    "The Docker daemon is running Windows containers; the runner requires Linux-container mode. "
+                    "The Docker daemon is running Windows containers; the agent runtime requires Linux-container mode. "
                     + "Switch Docker Desktop to Linux containers and try again.");
         }
 
-        String source = properties.getDockerSocketPath();
+        String source = properties.getSocketPath();
         if (source == null || source.isBlank()) {
             source = DEFAULT_DOCKER_SOCKET_PATH;
         }

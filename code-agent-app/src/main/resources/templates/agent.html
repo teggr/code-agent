@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2/sse.js"></script>
+  <title>Agent</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 32px; }
+    .shell { max-width: 1000px; margin: 0 auto; }
+    .panel { background: white; border: 2px solid #333; border-radius: 8px; padding: 18px; margin-bottom: 24px; box-shadow: 4px 4px 0 #d9d9d9; }
+    .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .row textarea, .row input { flex: 1; padding: 10px 12px; border: 2px solid #2a2a2a; border-radius: 8px; font-size: 14px; }
+    .button { background: white; color: #111; border: 2px solid #333; border-radius: 8px; padding: 8px 12px; cursor: pointer; text-decoration: none; }
+    .button.disabled { opacity: .5; pointer-events: none; cursor: default; }
+    .meta { color: #555; font-size: 13px; }
+    .status { display: inline-block; padding: 4px 8px; border: 1px solid #333; border-radius: 99px; font-size: 12px; }
+    .messages { border: 2px solid #333; border-radius: 8px; padding: 12px; background: white; }
+    .msg { padding: 8px 0; border-bottom: 1px solid #d0d0d0; white-space: pre-wrap; }
+    .msg:last-child { border-bottom: none; }
+    .role { font-weight: bold; display: inline-block; width: 80px; }
+  </style>
+</head>
+<body>
+    <div class="shell" hx-ext="sse"
+      th:attr="sse-connect=${conversationId != null} ? |/agents/${agentId}/conversations/${conversationId}/events| : |/agents/${agentId}/events|">
+    <nav class="row">
+      <a class="button" href="/">Back to dashboard</a>
+      <a class="button" id="vscode-link" sse-swap="vscode" hx-swap="outerHTML"
+         th:classappend="${workspaceReady} ? '' : ' disabled'"
+         th:href="${workspaceReady} ? ${workspaceUri} : '#'"
+         th:text="${workspaceReady} ? 'VS Code' : 'VS Code (starting…)'">VS Code</a>
+      <form method="post" th:action="|/agents/${agentId}/stop|">
+        <button class="button" type="submit" th:disabled="${agentStatus.name() != 'RUNNING'}">Stop agent</button>
+      </form>
+      <form method="post" th:action="|/agents/${agentId}/start|">
+        <button class="button" type="submit" th:disabled="${agentStatus.name() != 'STOPPED'}">Start agent</button>
+      </form>
+      <form method="post" th:action="|/agents/${agentId}/remove|">
+        <button class="button" type="submit">Remove agent</button>
+      </form>
+    </nav>
+
+    <div class="panel">
+      <h2>Agent: <span th:text="${agentId}">agent-id</span></h2>
+      <div class="meta">Repository: <span th:text="${repositoryUrl}">repository-url</span></div>
+      <div class="meta">Agent status: <span class="status" th:text="${agentStatus}">RUNNING</span></div>
+      <div class="meta" th:if="${conversationId != null}">Conversation status:
+        <span class="status" id="conversation-status" sse-swap="conversationStatus" hx-swap="outerHTML"
+              th:text="${conversationStatus}">IDLE</span>
+      </div>
+      <div class="row">
+        <strong>Conversations</strong>
+        <form method="post" th:action="|/agents/${agentId}/conversations|">
+          <button class="button" type="submit">New conversation</button>
+        </form>
+      </div>
+      <div class="row">
+        <a class="button" th:each="candidate : ${conversations}"
+           th:href="|/agents/${agentId}/conversations/${candidate.id}|"
+           th:text="${candidate.id == conversationId ? 'Current conversation' : candidate.id.substring(0, 8)}"></a>
+          <form method="post" th:if="${conversationId != null}"
+            th:action="|/agents/${agentId}/conversations/${conversationId}/remove|">
+          <button class="button" type="submit">Close conversation</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel" th:if="${conversationId != null}">
+      <div class="messages" id="messages" sse-swap="message" hx-swap="beforeend">
+        <div class="msg" th:each="message : ${messages}" th:classappend="'msg-' + ${message.role}">
+          <span class="role" th:text="${message.role}">user</span>
+          <span th:text="${message.content}">content</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="pending-question" sse-swap="question" hx-swap="outerHTML" th:if="${conversationId != null}">
+      <div class="panel" th:if="${pendingQuestion != null}">
+        <strong>Agent is asking:</strong>
+        <div class="row" th:text="${pendingQuestion.prompt}">question</div>
+        <form method="post" th:action="|/agents/${agentId}/conversations/${conversationId}/answer|">
+          <input type="hidden" name="questionId" th:value="${pendingQuestion.id}"/>
+          <div class="row" th:if="${pendingQuestion.choices != null and !#lists.isEmpty(pendingQuestion.choices)}">
+            <button class="button" type="submit" name="answer" th:each="choice : ${pendingQuestion.choices}"
+                    th:value="${choice}" th:text="${choice}"></button>
+          </div>
+          <div class="row" th:unless="${pendingQuestion.choices != null and !#lists.isEmpty(pendingQuestion.choices)}">
+            <input type="text" name="answer" placeholder="Your answer"/>
+            <button class="button" type="submit">Send</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel" th:if="${conversationId != null}">
+      <form method="post" th:action="|/agents/${agentId}/conversations/${conversationId}/prompt|">
+        <div class="row">
+          <textarea name="prompt" rows="5" th:disabled="${!promptable}"
+                    th:placeholder="${promptable} ? 'Send a message to this agent' : 'This conversation is not connected'"></textarea>
+        </div>
+        <div class="row">
+          <button class="button" type="submit" th:disabled="${!promptable}">Send message</button>
+          <button class="button" type="submit" formmethod="post"
+                  th:formaction="|/agents/${agentId}/conversations/${conversationId}/abort|"
+                  th:classappend="${conversationStatus.name() == 'BUSY'} ? '' : ' disabled'">Stop</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

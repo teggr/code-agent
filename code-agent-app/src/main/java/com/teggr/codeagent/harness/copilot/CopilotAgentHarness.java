@@ -53,7 +53,7 @@ class CopilotAgentHarness implements AgentHarness {
     }
 
     private AtomicReference<Function<Question, CompletableFuture<String>>> questionHandlerRef() {
-        // Holds the RunnerSession-supplied question handler, which isn't known until after the SDK session exists.
+        // Holds the conversation-supplied question handler, which is unknown until after the SDK session exists.
         return new AtomicReference<>();
     }
 

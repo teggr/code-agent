@@ -8,15 +8,14 @@ import com.github.copilot.CopilotClient;
 import com.github.copilot.rpc.CopilotClientOptions;
 import com.teggr.codeagent.harness.AgentHarness;
 import com.teggr.codeagent.harness.AgentHarnessFactory;
-import com.teggr.codeagent.harness.AgentHarnessProperties;
 
-/** Connects to the Copilot CLI server, retrying while the runner container is still starting up. */
+/** Connects to the Copilot CLI server, retrying while the Agent runtime is still starting. */
 @Service
 public class CopilotAgentHarnessFactory implements AgentHarnessFactory {
 
-    private final AgentHarnessProperties properties;
+    private final CopilotHarnessProperties properties;
 
-    public CopilotAgentHarnessFactory(AgentHarnessProperties properties) {
+    public CopilotAgentHarnessFactory(CopilotHarnessProperties properties) {
         this.properties = properties;
     }
 

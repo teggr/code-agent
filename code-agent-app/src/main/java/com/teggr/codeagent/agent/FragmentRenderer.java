@@ -1,4 +1,4 @@
-package com.teggr.codeagent.runner;
+package com.teggr.codeagent.agent;
 
 import java.util.Set;
 
@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
-/** Renders small Thymeleaf fragments for SSE pushes, reusing the same markup as the full pages. */
 @Component
 public class FragmentRenderer {
 
@@ -22,30 +21,31 @@ public class FragmentRenderer {
         return templateEngine.process("fragments", Set.of("message"), context);
     }
 
-    public String statusBadge(RunnerStatus status) {
+    public String conversationStatus(AgentConversationStatus status) {
         Context context = new Context();
-        context.setVariable("status", status);
-        return templateEngine.process("fragments", Set.of("statusBadge"), context);
+        context.setVariable("conversationStatus", status);
+        return templateEngine.process("fragments", Set.of("conversationStatusBadge"), context);
     }
 
-    public String pendingQuestion(String runnerId, com.teggr.codeagent.harness.Question question) {
+    public String pendingQuestion(String agentId, String conversationId,
+            com.teggr.codeagent.harness.Question question) {
         Context context = new Context();
-        context.setVariable("runnerId", runnerId);
+        context.setVariable("agentId", agentId);
+        context.setVariable("conversationId", conversationId);
         context.setVariable("question", question);
         return templateEngine.process("fragments", Set.of("pendingQuestion"), context);
     }
 
-    public String runnerList(Iterable<? extends RunnerSession> sessions) {
+    public String agentList(Iterable<Agent> agents) {
         Context context = new Context();
-        context.setVariable("runners", sessions);
-        return templateEngine.process("fragments", Set.of("runnerList"), context);
+        context.setVariable("agents", agents);
+        return templateEngine.process("fragments", Set.of("agentList"), context);
     }
 
-    public String vscodeLink(String devContainerUri, boolean ready) {
+    public String vscodeLink(String workspaceUri, boolean ready) {
         Context context = new Context();
-        context.setVariable("devContainerUri", devContainerUri);
+        context.setVariable("workspaceUri", workspaceUri);
         context.setVariable("ready", ready);
         return templateEngine.process("fragments", Set.of("vscodeLink"), context);
     }
-
 }

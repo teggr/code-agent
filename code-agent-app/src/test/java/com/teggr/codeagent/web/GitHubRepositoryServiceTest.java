@@ -13,7 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-import com.teggr.codeagent.agent.runtime.docker.DockerAgentRuntimeProperties;
+import com.teggr.codeagent.agent.GitRepositoryWorkspaceProperties;
 
 class GitHubRepositoryServiceTest {
 
@@ -21,8 +21,8 @@ class GitHubRepositoryServiceTest {
     void findsAccessibleRepositoriesAndFiltersByName() {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.github.com");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
-        properties.setGitToken("test-token");
+        GitRepositoryWorkspaceProperties properties = new GitRepositoryWorkspaceProperties();
+        properties.setToken("test-token");
         GitHubRepositoryService service = new GitHubRepositoryService(builder, properties);
 
         server.expect(requestTo("https://api.github.com/user/repos?type=all&sort=updated&per_page=100&page=1"))
@@ -51,8 +51,8 @@ class GitHubRepositoryServiceTest {
         void searchesAllPagesWhenMatchingRepositoryIsNotRecentlyUpdated() {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.github.com");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
-        properties.setGitToken("test-token");
+        GitRepositoryWorkspaceProperties properties = new GitRepositoryWorkspaceProperties();
+        properties.setToken("test-token");
         GitHubRepositoryService service = new GitHubRepositoryService(builder, properties);
         String firstPage = "[" + String.join(",", java.util.Collections.nCopies(100,
             "{\"full_name\":\"teggr/other\",\"html_url\":\"https://github.com/teggr/other\","
@@ -76,7 +76,7 @@ class GitHubRepositoryServiceTest {
 
     @Test
     void reportsUnavailableWhenNoGitHubTokenIsConfigured() {
-        DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
+        GitRepositoryWorkspaceProperties properties = new GitRepositoryWorkspaceProperties();
         GitHubRepositoryService service = new GitHubRepositoryService(RestClient.builder(), properties);
 
         GitHubRepositoryService.RepositoryPage result = service.findRepositories("", 1);

@@ -21,10 +21,10 @@
   </style>
 </head>
 <body>
-  <div class="shell" hx-ext="sse" sse-connect="/runners/events">
+  <div class="shell" hx-ext="sse" sse-connect="/agents/events">
     <div class="panel">
-      <h2>Start a new runner</h2>
-      <form method="post" action="/runners">
+      <h2>Start a new agent</h2>
+      <form method="post" action="/agents">
         <div th:replace="~{fragments :: repositoryPicker}"></div>
         <div class="row">
           <textarea name="prompt" rows="5" placeholder="Describe the task you want the agent to run"></textarea>
@@ -36,9 +36,9 @@
     </div>
 
     <div class="panel">
-      <h2>Running runners</h2>
-      <div id="runner-list" sse-swap="runnerList">
-        <div th:replace="~{fragments :: runnerList(${runners})}"></div>
+      <h2>Hosted agents</h2>
+      <div id="agent-list" sse-swap="agentList">
+        <div th:replace="~{fragments :: agentList(${agents})}"></div>
       </div>
     </div>
   </div>

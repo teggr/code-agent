@@ -12,8 +12,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 
-import com.teggr.codeagent.agent.runtime.docker.DockerAgentRuntimeProperties;
-import com.teggr.codeagent.runner.RunnerManager;
+import com.teggr.codeagent.agent.AgentManager;
+import com.teggr.codeagent.agent.AgentProperties;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
@@ -39,16 +39,16 @@ public class CodeAgentApplication {
     }
 
     @Bean
-    public ApplicationListener<ApplicationReadyEvent> existingRunnerAdoption(
-            RunnerManager runnerManager, DockerAgentRuntimeProperties properties) {
+    public ApplicationListener<ApplicationReadyEvent> existingAgentRestoration(
+            AgentManager agentManager, AgentProperties properties) {
         return event -> {
-            if (!properties.isAdoptExistingOnStartup()) {
+            if (!properties.isRestoreExistingOnStartup()) {
                 return;
             }
             try {
-                runnerManager.adoptExisting();
+                agentManager.adoptExisting();
             } catch (Exception e) {
-                log.warn("Unable to adopt runner containers left by a previous run", e);
+                log.warn("Unable to restore hosted agents from existing runtime resources", e);
             }
         };
     }

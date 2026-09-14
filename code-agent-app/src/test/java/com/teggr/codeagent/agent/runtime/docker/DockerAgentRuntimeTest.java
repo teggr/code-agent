@@ -34,15 +34,16 @@ import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.Info;
 import com.github.dockerjava.api.model.StreamType;
 import com.teggr.codeagent.agent.GitRepositoryWorkspace;
+import com.teggr.codeagent.agent.GitRepositoryWorkspaceProperties;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
 import com.teggr.codeagent.agent.runtime.AgentRuntimeRequest;
 import com.teggr.codeagent.agent.runtime.DiscoveredAgent;
+import com.teggr.codeagent.harness.copilot.CopilotHarnessProperties;
 
 class DockerAgentRuntimeTest {
 
     private final DockerClient dockerClient = mock(DockerClient.class);
-    private final DockerAgentRuntime service = new DockerAgentRuntime(dockerClient,
-            new DockerAgentRuntimeProperties());
+    private final DockerAgentRuntime service = runtime(new DockerAgentRuntimeProperties(), "", "");
 
     @Test
     void launchRejectsMissingGhToken() {
@@ -54,8 +55,7 @@ class DockerAgentRuntimeTest {
     @Test
     void launchDefaultsCopilotTokenToGitTokenWhenNotConfigured() throws Exception {
         DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
-        properties.setGitToken("git-token");
-        DockerAgentRuntime runnerService = new DockerAgentRuntime(dockerClient, properties);
+        DockerAgentRuntime agentRuntime = runtime(properties, "git-token", "");
 
         stubInfo("linux");
 
@@ -70,7 +70,7 @@ class DockerAgentRuntimeTest {
 
         stubPublishedPort("container-1", "4321");
 
-        runnerService.provision(request());
+        agentRuntime.provision(request());
 
         verify(createContainerCmd).withEnv("GH_TOKEN=git-token",
                 "COPILOT_GITHUB_TOKEN=git-token",
@@ -78,10 +78,9 @@ class DockerAgentRuntimeTest {
     }
 
     @Test
-    void launchLabelsTheContainerWithRunnerIdentity() throws Exception {
+    void launchLabelsTheContainerWithAgentIdentity() throws Exception {
         DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
-        properties.setGitToken("git-token");
-        DockerAgentRuntime runnerService = new DockerAgentRuntime(dockerClient, properties);
+        DockerAgentRuntime agentRuntime = runtime(properties, "git-token", "");
 
         stubInfo("linux");
 
@@ -93,13 +92,13 @@ class DockerAgentRuntimeTest {
         when(dockerClient.startContainerCmd("container-1")).thenReturn(mock(StartContainerCmd.class));
         stubPublishedPort("container-1", "4321");
 
-        runnerService.provision(request());
+        agentRuntime.provision(request());
 
         ArgumentCaptor<Map<String, String>> labels = ArgumentCaptor.forClass(Map.class);
         verify(createContainerCmd).withLabels(labels.capture());
         assertThat(labels.getValue())
             .containsEntry(DockerAgentRuntime.MANAGED_LABEL, "true")
-            .containsEntry(DockerAgentRuntime.RUNNER_ID_LABEL, "runner-1")
+            .containsEntry(DockerAgentRuntime.AGENT_ID_LABEL, "agent-1")
             .containsEntry(DockerAgentRuntime.REPO_URL_LABEL, "https://github.com/fanduel/withdrawals")
             .containsEntry(DockerAgentRuntime.WORKSPACE_PATH_LABEL, "/workspace/withdrawals")
             .containsKey(DockerAgentRuntime.CREATED_AT_LABEL);
@@ -143,15 +142,15 @@ class DockerAgentRuntimeTest {
     }
 
     @Test
-    void listManagedRebuildsRunnersFromLabelsAndReReadsThePublishedPort() {
+    void discoveryRebuildsAgentsFromLabelsAndReReadsThePublishedPort() {
         Container running = managedContainer("container-1", Map.of(
                 DockerAgentRuntime.MANAGED_LABEL, "true",
-                DockerAgentRuntime.RUNNER_ID_LABEL, "runner-1",
+                DockerAgentRuntime.AGENT_ID_LABEL, "agent-1",
                 DockerAgentRuntime.REPO_URL_LABEL, "https://github.com/fanduel/withdrawals",
                 DockerAgentRuntime.WORKSPACE_PATH_LABEL, "/workspace/withdrawals"));
         Container exited = managedContainer("container-2", Map.of(
                 DockerAgentRuntime.MANAGED_LABEL, "true",
-                DockerAgentRuntime.RUNNER_ID_LABEL, "runner-2",
+                DockerAgentRuntime.AGENT_ID_LABEL, "agent-2",
                 DockerAgentRuntime.REPO_URL_LABEL, "https://github.com/fanduel/withdrawals",
                 DockerAgentRuntime.WORKSPACE_PATH_LABEL, "/workspace/withdrawals"));
         stubListContainers(running, exited);
@@ -160,7 +159,7 @@ class DockerAgentRuntimeTest {
 
         List<DiscoveredAgent> managed = service.discover();
 
-        assertThat(managed).extracting(DiscoveredAgent::agentId).containsExactly("runner-1", "runner-2");
+        assertThat(managed).extracting(DiscoveredAgent::agentId).containsExactly("agent-1", "agent-2");
         assertThat(managed.get(0).running()).isTrue();
         assertThat(managed.get(0).instance().harnessPort()).isEqualTo(51000);
         assertThat(managed.get(0).instance().workspaceAccess().uri()).contains("/workspace/withdrawals");
@@ -169,7 +168,7 @@ class DockerAgentRuntimeTest {
     }
 
     @Test
-    void listManagedRemovesContainersThatCarryNoRunnerId() {
+    void listManagedRemovesContainersThatCarryNoAgentId() {
         stubListContainers(managedContainer("legacy-1", Map.of(DockerAgentRuntime.MANAGED_LABEL, "true")));
         StopContainerCmd stopCmd = mock(StopContainerCmd.class, org.mockito.Answers.RETURNS_SELF);
         when(dockerClient.stopContainerCmd(any())).thenReturn(stopCmd);
@@ -244,9 +243,9 @@ class DockerAgentRuntimeTest {
     void socketBindHonoursTheConfiguredSourcePath() {
         stubInfo("linux");
         DockerAgentRuntimeProperties properties = new DockerAgentRuntimeProperties();
-        properties.setDockerSocketPath("/run/user/1000/podman/podman.sock");
+        properties.setSocketPath("/run/user/1000/podman/podman.sock");
 
-        Bind bind = new DockerAgentRuntime(dockerClient, properties).resolveDockerSocketBind();
+        Bind bind = runtime(properties, "", "").resolveDockerSocketBind();
 
         assertThat(bind.getPath()).isEqualTo("/run/user/1000/podman/podman.sock");
         assertThat(bind.getVolume().getPath()).isEqualTo("/var/run/docker.sock");
@@ -305,8 +304,17 @@ class DockerAgentRuntimeTest {
     }
 
     private AgentRuntimeRequest request() {
-        return new AgentRuntimeRequest("runner-1",
+        return new AgentRuntimeRequest("agent-1",
                 new GitRepositoryWorkspace("https://github.com/fanduel/withdrawals"));
+    }
+
+    private DockerAgentRuntime runtime(DockerAgentRuntimeProperties runtimeProperties,
+            String gitToken, String copilotToken) {
+        GitRepositoryWorkspaceProperties gitProperties = new GitRepositoryWorkspaceProperties();
+        gitProperties.setToken(gitToken);
+        CopilotHarnessProperties copilotProperties = new CopilotHarnessProperties();
+        copilotProperties.setToken(copilotToken);
+        return new DockerAgentRuntime(dockerClient, runtimeProperties, gitProperties, copilotProperties);
     }
 
 }

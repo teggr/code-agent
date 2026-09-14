@@ -9,29 +9,29 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.teggr.codeagent.agent.runtime.docker.DockerAgentRuntimeProperties;
+import com.teggr.codeagent.agent.GitRepositoryWorkspaceProperties;
 
-/** Retrieves the repositories available to the token used by runner containers. */
+/** Retrieves repositories available to the credential used for Git-backed Agent workspaces. */
 @Service
 public class GitHubRepositoryService {
 
     static final int PAGE_SIZE = 100;
 
     private final RestClient restClient;
-        private final DockerAgentRuntimeProperties runnerProperties;
+    private final GitRepositoryWorkspaceProperties workspaceProperties;
 
-        public GitHubRepositoryService(RestClient.Builder restClientBuilder,
-            DockerAgentRuntimeProperties runnerProperties) {
+    public GitHubRepositoryService(RestClient.Builder restClientBuilder,
+            GitRepositoryWorkspaceProperties workspaceProperties) {
         this.restClient = restClientBuilder
                 .baseUrl("https://api.github.com")
                 .defaultHeader("Accept", "application/vnd.github+json")
                 .defaultHeader("X-GitHub-Api-Version", "2022-11-28")
                 .build();
-        this.runnerProperties = runnerProperties;
+        this.workspaceProperties = workspaceProperties;
     }
 
     public RepositoryPage findRepositories(String query, int page) {
-        String gitToken = runnerProperties.getGitToken();
+        String gitToken = workspaceProperties.getToken();
         if (gitToken == null || gitToken.isBlank()) {
             return RepositoryPage.unavailablePage();
         }

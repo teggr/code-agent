@@ -27,6 +27,7 @@ import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
 import com.teggr.codeagent.agent.runtime.WorkspaceAccess;
 import com.teggr.codeagent.harness.AgentHarness;
 import com.teggr.codeagent.harness.HarnessSession;
+import com.teggr.codeagent.schedule.ScheduledTaskService;
 
 class AgentWebControllerTest {
 
@@ -34,7 +35,10 @@ class AgentWebControllerTest {
     void dashboardUsesCanonicalAgentsModel() {
         AgentManager manager = mock(AgentManager.class);
         when(manager.list()).thenReturn(List.of());
-        AgentWebController controller = new AgentWebController(manager, mock(GitHubRepositoryService.class));
+        ScheduledTaskService scheduledTaskService = mock(ScheduledTaskService.class);
+        when(scheduledTaskService.list()).thenReturn(List.of());
+        AgentWebController controller = new AgentWebController(manager, mock(GitHubRepositoryService.class),
+                scheduledTaskService);
 
         ModelAndView view = controller.dashboard();
 
@@ -50,7 +54,7 @@ class AgentWebControllerTest {
                 List.of(new GitHubRepositoryService.Repository("teggr/j2html-toolkit",
                         "https://github.com/teggr/j2html-toolkit", "private", true,
                         Instant.parse("2026-09-10T10:00:00Z"))), false, false));
-        AgentWebController controller = new AgentWebController(manager, repositoryService);
+        AgentWebController controller = new AgentWebController(manager, repositoryService, mock(ScheduledTaskService.class));
 
         ModelAndView view = controller.repositoryResults("toolkit", 1);
 
@@ -236,7 +240,7 @@ class AgentWebControllerTest {
     }
 
     private static AgentWebController controller(AgentManager manager) {
-        return new AgentWebController(manager, mock(GitHubRepositoryService.class));
+        return new AgentWebController(manager, mock(GitHubRepositoryService.class), mock(ScheduledTaskService.class));
     }
 
     private static AgentManager managerWithAgent() {

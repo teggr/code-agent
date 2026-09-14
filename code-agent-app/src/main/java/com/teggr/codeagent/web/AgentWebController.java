@@ -16,22 +16,27 @@ import com.teggr.codeagent.agent.AgentConversation;
 import com.teggr.codeagent.agent.AgentConversationStatus;
 import com.teggr.codeagent.agent.AgentManager;
 import com.teggr.codeagent.agent.GitRepositoryWorkspace;
+import com.teggr.codeagent.schedule.ScheduledTaskService;
 
 @Controller
 public class AgentWebController {
 
     private final AgentManager agentManager;
     private final GitHubRepositoryService repositoryService;
+    private final ScheduledTaskService scheduledTaskService;
 
-    public AgentWebController(AgentManager agentManager, GitHubRepositoryService repositoryService) {
+    public AgentWebController(AgentManager agentManager, GitHubRepositoryService repositoryService,
+            ScheduledTaskService scheduledTaskService) {
         this.agentManager = agentManager;
         this.repositoryService = repositoryService;
+        this.scheduledTaskService = scheduledTaskService;
     }
 
     @GetMapping("/")
     public ModelAndView dashboard() {
         ModelAndView view = new ModelAndView("dashboard");
         view.addObject("agents", agentManager.list());
+        view.addObject("scheduledTasks", scheduledTaskService.list());
         return view;
     }
 

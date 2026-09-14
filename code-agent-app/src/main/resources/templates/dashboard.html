@@ -41,6 +41,29 @@
         <div th:replace="~{fragments :: agentList(${agents})}"></div>
       </div>
     </div>
+
+    <div class="panel">
+      <h2>Schedule a recurring agent</h2>
+      <form method="post" action="/scheduled-tasks" onsubmit="return confirmEmptyWorkspaceStart(this)">
+        <div th:replace="~{fragments :: repositoryPicker}"></div>
+        <div class="row">
+          <textarea name="prompt" rows="5" placeholder="Describe the task the agent should run on each fire"></textarea>
+        </div>
+        <div class="row">
+          <input name="cronExpression" type="text" placeholder="Cron expression, e.g. 0 0 9 * * MON-FRI"/>
+        </div>
+        <div class="row">
+          <button class="button" type="submit">Schedule task</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Scheduled tasks</h2>
+      <div id="scheduled-task-list" sse-swap="scheduledTaskList">
+        <div th:replace="~{fragments :: scheduledTaskList(${scheduledTasks})}"></div>
+      </div>
+    </div>
   </div>
   <script>
     // No repoUrl input means the agent would start with an empty workspace; confirm to avoid an accidental click.

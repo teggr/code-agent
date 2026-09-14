@@ -140,6 +140,35 @@
     </div>
   </th:block>
 
+  <th:block th:fragment="scheduledTaskList(scheduledTasks)">
+    <div th:if="${#lists.isEmpty(scheduledTasks)}">
+      <p>No scheduled tasks.</p>
+    </div>
+    <div th:unless="${#lists.isEmpty(scheduledTasks)}">
+      <div class="card" th:each="task : ${scheduledTasks}">
+        <div>
+          <div><strong>Cron:</strong> <span th:text="${task.cronExpression()}">0 0 9 * * MON-FRI</span></div>
+          <div class="meta">Repository: <span th:text="${task.repositoryUrl() != null ? task.repositoryUrl() : 'None (empty workspace)'}">repository-url</span></div>
+          <div class="meta" th:if="${task.currentAgentId() != null}">
+            Running as <a th:href="|/agents/${task.currentAgentId()}|" th:text="${task.currentAgentId()}">agent-id</a>
+          </div>
+        </div>
+        <div class="row">
+          <span class="status" th:text="${task.status()}">SCHEDULED</span>
+          <form method="post" th:if="${task.enabled()}" th:action="|/scheduled-tasks/${task.id()}/pause|">
+            <button class="button" type="submit">Pause</button>
+          </form>
+          <form method="post" th:unless="${task.enabled()}" th:action="|/scheduled-tasks/${task.id()}/resume|">
+            <button class="button" type="submit">Resume</button>
+          </form>
+          <form method="post" th:action="|/scheduled-tasks/${task.id()}/delete|">
+            <button class="button" type="submit">Delete</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </th:block>
+
   <th:block th:fragment="runnerList(runners)">
     <div th:if="${#lists.isEmpty(runners)}">
       <p>No active runners.</p>

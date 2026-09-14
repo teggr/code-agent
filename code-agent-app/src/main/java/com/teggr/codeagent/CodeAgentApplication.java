@@ -11,12 +11,14 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import com.teggr.codeagent.agent.AgentManager;
 import com.teggr.codeagent.agent.AgentProperties;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
+@EnableScheduling
 public class CodeAgentApplication {
 
     private static final Logger log = LoggerFactory.getLogger(CodeAgentApplication.class);

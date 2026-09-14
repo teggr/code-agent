@@ -86,6 +86,11 @@ public class AgentEventPublisher {
         }
     }
 
+    /** Allows other packages (e.g. schedule) to push updates onto the same dashboard SSE connection. */
+    public void sendToDashboard(String event, String html) {
+        sendAll(dashboardSubscribers, event, html);
+    }
+
     public void closeAll() {
         allEmitters.forEach(emitter -> {
             try {

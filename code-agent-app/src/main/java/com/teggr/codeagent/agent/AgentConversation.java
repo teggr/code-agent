@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import com.teggr.codeagent.harness.HarnessHistoryEntry;
 import com.teggr.codeagent.harness.HarnessSession;
@@ -25,6 +26,7 @@ public class AgentConversation {
     private volatile AgentConversationListener listener;
     private final Map<String, CompletableFuture<String>> pendingQuestions = new ConcurrentHashMap<>();
     private volatile Question pendingQuestion;
+    private final List<Consumer<AgentConversationStatus>> statusListeners = new CopyOnWriteArrayList<>();
 
     public AgentConversation(Agent agent) {
         this(UUID.randomUUID().toString(), agent);
@@ -49,6 +51,11 @@ public class AgentConversation {
 
     public void setListener(AgentConversationListener listener) {
         this.listener = listener;
+    }
+
+    /** Registers an additional observer of status changes, independent of the single primary listener. */
+    public void addStatusListener(Consumer<AgentConversationStatus> statusListener) {
+        statusListeners.add(statusListener);
     }
 
     public void attachHarnessSession(HarnessSession session) {
@@ -135,6 +142,9 @@ public class AgentConversation {
         AgentConversationListener current = listener;
         if (current != null && previous != newStatus) {
             current.onStatusChange(this, newStatus);
+        }
+        if (previous != newStatus) {
+            statusListeners.forEach(statusListener -> statusListener.accept(newStatus));
         }
     }
 

@@ -16,3 +16,15 @@ codeagent:
       retry-delay-ms: 500
       start-timeout-seconds: 5
       log-level: debug
+  schedule:
+    data-dir: ${user.home}/.code-agent/data
+    idle-timeout: 5m
+
+spring:
+  datasource:
+    url: jdbc:h2:file:${codeagent.schedule.data-dir}/scheduler;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false

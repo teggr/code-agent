@@ -2,36 +2,37 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
 
-  <div th:fragment="repositoryPicker" id="repository-picker">
+  <div th:fragment="repositoryPicker(pickerId)" th:id="|${pickerId}-repository-picker|">
     <div th:if="${emptyWorkspaceSelected != null}" class="row">
       <span class="meta">No repository selected — the agent will start with an empty workspace.</span>
-      <button class="button" type="button" hx-get="/repositories/picker" hx-target="#repository-picker"
-              hx-swap="outerHTML">Choose a repository instead</button>
+            <button class="button" type="button" hx-get="/repositories/picker" th:hx-target="|#${pickerId}-repository-picker|"
+              hx-swap="outerHTML" th:hx-vals="|{&quot;pickerId&quot;:&quot;${pickerId}&quot;}|">Choose a repository instead</button>
     </div>
     <div th:if="${emptyWorkspaceSelected == null and selectedRepositoryUrl != null}" class="row">
       <input type="hidden" name="repoUrl" th:value="${selectedRepositoryUrl}"/>
       <span th:text="${selectedRepositoryName}">owner/repository</span>
-            <button class="button" type="button" hx-get="/repositories/picker" hx-target="#repository-picker"
-              hx-swap="outerHTML">Change</button>
-            <a href="#" hx-get="/repositories/empty-selection" hx-target="#repository-picker"
-               hx-swap="outerHTML">Start without a repository</a>
+            <button class="button" type="button" hx-get="/repositories/picker" th:hx-target="|#${pickerId}-repository-picker|"
+              hx-swap="outerHTML" th:hx-vals="|{&quot;pickerId&quot;:&quot;${pickerId}&quot;}|">Change</button>
+            <a href="#" hx-get="/repositories/empty-selection" th:hx-target="|#${pickerId}-repository-picker|"
+               hx-swap="outerHTML" th:hx-vals="|{&quot;pickerId&quot;:&quot;${pickerId}&quot;}|">Start without a repository</a>
     </div>
     <div th:if="${emptyWorkspaceSelected == null and selectedRepositoryUrl == null}">
       <div class="row">
          <input type="search" name="query" placeholder="Search repositories" autocomplete="off"
            onkeydown="if (event.key === 'Enter') event.preventDefault();"
-               hx-get="/repositories" hx-trigger="input changed delay:250ms, search" hx-target="#repository-results"
-               hx-swap="innerHTML"/>
+               hx-get="/repositories" hx-trigger="input changed delay:250ms, search"
+               th:hx-target="|#${pickerId}-repository-results|" hx-swap="innerHTML"
+               th:hx-vals="|{&quot;pickerId&quot;:&quot;${pickerId}&quot;}|"/>
       </div>
-      <div id="repository-results"></div>
+      <div th:id="|${pickerId}-repository-results|"></div>
       <div class="row">
-        <a href="#" hx-get="/repositories/empty-selection" hx-target="#repository-picker"
-           hx-swap="outerHTML">Start without a repository</a>
+        <a href="#" hx-get="/repositories/empty-selection" th:hx-target="|#${pickerId}-repository-picker|"
+           hx-swap="outerHTML" th:hx-vals="|{&quot;pickerId&quot;:&quot;${pickerId}&quot;}|">Start without a repository</a>
       </div>
     </div>
   </div>
 
-  <div th:fragment="repositoryResults" id="repository-results">
+  <div th:fragment="repositoryResults(pickerId)" th:id="|${pickerId}-repository-results|">
     <p th:if="${unavailable}" class="meta">Repositories are unavailable. Check the configured GitHub token.</p>
     <p th:if="${!unavailable and #lists.isEmpty(repositories)}" class="meta">No repositories found.</p>
     <div th:each="repository : ${repositories}" class="card">
@@ -39,11 +40,12 @@
         <strong th:text="${repository.fullName}">owner/repository</strong>
         <div class="meta"><span th:text="${repository.visibilityLabel}">Private</span></div>
       </div>
-      <button class="button" type="button" hx-get="/repositories/selection" hx-target="#repository-picker"
-              hx-swap="outerHTML" th:hx-vals="|{&quot;repoUrl&quot;:&quot;${repository.htmlUrl}&quot;,&quot;fullName&quot;:&quot;${repository.fullName}&quot;}|">Select</button>
+            <button class="button" type="button" hx-get="/repositories/selection" th:hx-target="|#${pickerId}-repository-picker|"
+              hx-swap="outerHTML" th:hx-vals="|{&quot;repoUrl&quot;:&quot;${repository.htmlUrl}&quot;,&quot;fullName&quot;:&quot;${repository.fullName}&quot;,&quot;pickerId&quot;:&quot;${pickerId}&quot;}|">Select</button>
     </div>
-    <button th:if="${hasMore}" class="button" type="button" hx-get="/repositories" hx-target="#repository-results"
-            hx-swap="innerHTML" th:hx-vals="|{&quot;query&quot;:&quot;${query}&quot;,&quot;page&quot;:${nextPage}}|">Load more</button>
+        <button th:if="${hasMore}" class="button" type="button" hx-get="/repositories"
+          th:hx-target="|#${pickerId}-repository-results|" hx-swap="innerHTML"
+          th:hx-vals="|{&quot;query&quot;:&quot;${query}&quot;,&quot;page&quot;:${nextPage},&quot;pickerId&quot;:&quot;${pickerId}&quot;}|">Load more</button>
   </div>
 
   <!-- One timeline message; full chat rows and compact activity rows share chronological append order. -->
@@ -151,6 +153,9 @@
           <div class="meta">Repository: <span th:text="${task.repositoryUrl() != null ? task.repositoryUrl() : 'None (empty workspace)'}">repository-url</span></div>
           <div class="meta" th:if="${task.currentAgentId() != null}">
             Running as <a th:href="|/agents/${task.currentAgentId()}|" th:text="${task.currentAgentId()}">agent-id</a>
+          </div>
+          <div class="meta" th:if="${shutdownEstimates.get(task.id()) != null}">
+            Idle &mdash; expected tidy-up around <span th:text="${shutdownEstimates.get(task.id())}">12:00:00</span>
           </div>
         </div>
         <div class="row">

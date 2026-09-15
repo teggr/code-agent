@@ -16,6 +16,7 @@ import com.teggr.codeagent.agent.AgentConversation;
 import com.teggr.codeagent.agent.AgentConversationStatus;
 import com.teggr.codeagent.agent.AgentManager;
 import com.teggr.codeagent.agent.GitRepositoryWorkspace;
+import com.teggr.codeagent.schedule.IdleCompletionWatcher;
 import com.teggr.codeagent.schedule.ScheduledTaskService;
 
 @Controller
@@ -24,25 +25,30 @@ public class AgentWebController {
     private final AgentManager agentManager;
     private final GitHubRepositoryService repositoryService;
     private final ScheduledTaskService scheduledTaskService;
+    private final IdleCompletionWatcher idleCompletionWatcher;
 
     public AgentWebController(AgentManager agentManager, GitHubRepositoryService repositoryService,
-            ScheduledTaskService scheduledTaskService) {
+            ScheduledTaskService scheduledTaskService, IdleCompletionWatcher idleCompletionWatcher) {
         this.agentManager = agentManager;
         this.repositoryService = repositoryService;
         this.scheduledTaskService = scheduledTaskService;
+        this.idleCompletionWatcher = idleCompletionWatcher;
     }
 
     @GetMapping("/")
     public ModelAndView dashboard() {
         ModelAndView view = new ModelAndView("dashboard");
         view.addObject("agents", agentManager.list());
-        view.addObject("scheduledTasks", scheduledTaskService.list());
+        var scheduledTasks = scheduledTaskService.list();
+        view.addObject("scheduledTasks", scheduledTasks);
+        view.addObject("shutdownEstimates", idleCompletionWatcher.shutdownEstimates(scheduledTasks));
         return view;
     }
 
     @GetMapping("/repositories")
     public ModelAndView repositoryResults(@RequestParam(value = "query", defaultValue = "") String query,
-            @RequestParam(value = "page", defaultValue = "1") int page) {
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "pickerId", defaultValue = "hosted-agent") String pickerId) {
         ModelAndView view = new ModelAndView("fragments :: repositoryResults");
         GitHubRepositoryService.RepositoryPage repositoryPage = repositoryService.findRepositories(query, page);
         view.addObject("repositories", repositoryPage.repositories());
@@ -50,34 +56,48 @@ public class AgentWebController {
         view.addObject("nextPage", Math.max(page, 1) + 1);
         view.addObject("hasMore", repositoryPage.hasMore());
         view.addObject("unavailable", repositoryPage.unavailable());
+        view.addObject("pickerId", pickerId);
         return view;
     }
 
     @GetMapping("/repositories/selection")
     public ModelAndView repositorySelection(@RequestParam("repoUrl") String repoUrl,
-            @RequestParam("fullName") String fullName) {
+            @RequestParam("fullName") String fullName,
+            @RequestParam(value = "pickerId", defaultValue = "hosted-agent") String pickerId) {
         ModelAndView view = new ModelAndView("fragments :: repositoryPicker");
         view.addObject("selectedRepositoryUrl", repoUrl);
         view.addObject("selectedRepositoryName", fullName);
+        view.addObject("pickerId", pickerId);
         return view;
     }
 
     @GetMapping("/repositories/picker")
-    public ModelAndView repositoryPicker() {
-        return new ModelAndView("fragments :: repositoryPicker");
-    }
-
-    @GetMapping("/repositories/empty-selection")
-    public ModelAndView emptyWorkspaceSelection() {
+    public ModelAndView repositoryPicker(
+            @RequestParam(value = "pickerId", defaultValue = "hosted-agent") String pickerId) {
         ModelAndView view = new ModelAndView("fragments :: repositoryPicker");
-        view.addObject("emptyWorkspaceSelected", true);
+        view.addObject("pickerId", pickerId);
         return view;
     }
 
-    @PostMapping("/agents")
-    public ResponseEntity<Void> startAgent(@RequestParam(value = "repoUrl", required = false, defaultValue = "") String repoUrl,
-            @RequestParam("prompt") String prompt) {
-        if (repoUrl.isBlank()) {
+    @GetMapping("/repositories/empty-selection")
+    public ModelAndView emptyWorkspaceSelection(
+            @RequestParam(value = "pickerId", defaultValue = "hosted-agent") String pickerId) {
+        ModelAndView view = new ModelAndView("fragments :: repositoryPicker");
+        view.addObject("emptyWorkspaceSelected", true);
+        view.addObject("pickerId", pickerId);
+        return view;
+    }
+
+    /** Single form covers both "start now" and "schedule recurring" flows; mode picks which service handles it. */
+    @PostMapping("/agent-tasks")
+    public ResponseEntity<Void> createAgentTask(
+            @RequestParam(value = "repoUrl", required = false, defaultValue = "") String repoUrl,
+            @RequestParam("prompt") String prompt,
+            @RequestParam(value = "cronExpression", required = false, defaultValue = "") String cronExpression,
+            @RequestParam(value = "mode", defaultValue = "immediate") String mode) {
+        if ("schedule".equals(mode)) {
+            scheduledTaskService.create(repoUrl, prompt, cronExpression);
+        } else if (repoUrl.isBlank()) {
             agentManager.startLocalAsync(prompt);
         } else {
             agentManager.startAsync(repoUrl, prompt);

@@ -25,30 +25,16 @@
   <div class="shell" hx-ext="sse" sse-connect="/agents/events">
     <div class="panel">
       <div class="agent-action">
-        <h2>Start a new agent</h2>
-        <form method="post" action="/agents" onsubmit="return confirmEmptyWorkspaceStart(this)">
-          <div th:replace="~{fragments :: repositoryPicker}"></div>
+        <h2>Start or schedule an agent</h2>
+        <form method="post" action="/agent-tasks" onsubmit="return confirmEmptyWorkspaceStart(this)">
+          <div th:replace="~{fragments :: repositoryPicker('agent-task')}"></div>
           <div class="row">
             <textarea name="prompt" rows="5" placeholder="Describe the task you want the agent to run"></textarea>
           </div>
           <div class="row">
-            <button class="button" type="submit">Start task</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="agent-action">
-        <h2>Schedule a recurring agent</h2>
-        <form method="post" action="/scheduled-tasks" onsubmit="return confirmEmptyWorkspaceStart(this)">
-          <div th:replace="~{fragments :: repositoryPicker}"></div>
-          <div class="row">
-            <textarea name="prompt" rows="5" placeholder="Describe the task the agent should run on each fire"></textarea>
-          </div>
-          <div class="row">
-            <input name="cronExpression" type="text" placeholder="Cron expression, e.g. 0 0 9 * * MON-FRI"/>
-          </div>
-          <div class="row">
-            <button class="button" type="submit">Schedule task</button>
+            <input name="cronExpression" type="text" placeholder="Cron expression, e.g. 0 0 9 * * MON-FRI (only needed to schedule)"/>
+            <button class="button" type="submit" name="mode" value="schedule">Schedule task</button>
+            <button class="button" type="submit" name="mode" value="immediate">Start task</button>
           </div>
         </form>
       </div>

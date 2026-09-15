@@ -91,7 +91,7 @@ public class AgentTaskScheduler {
             task.setLastTriggeredAt(Instant.now());
             task.setCurrentAgentId(agentId);
             repository.save(task);
-            idleCompletionWatcher.watch(agentId, conversation, () -> complete(taskId, agentId));
+            idleCompletionWatcher.watch(agentId, conversation, () -> complete(taskId, agentId), this::publishList);
         } catch (Exception e) {
             log.warn("Failed to start scheduled agent for task {}: {}", taskId, e.getMessage());
             task.setStatus(ScheduledTaskStatus.FAILED);

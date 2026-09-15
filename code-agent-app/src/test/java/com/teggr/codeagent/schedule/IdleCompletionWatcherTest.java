@@ -3,6 +3,7 @@ package com.teggr.codeagent.schedule;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -65,5 +66,22 @@ class IdleCompletionWatcherTest {
         Thread.sleep(400);
 
         assertThat(completed).isFalse();
+    }
+
+    @Test
+    void shutdownEstimatesReflectArmedAndCancelledTimer() {
+        properties.setIdleTimeout(Duration.ofMinutes(5));
+        AgentConversation conversation = new AgentConversation(new Agent("agent-1", null, null, null, AgentStatus.RUNNING));
+        ScheduledAgentTask task = new ScheduledAgentTask("task-1", null, "prompt", "0 0 9 * * *");
+        task.setCurrentAgentId("agent-1");
+
+        watcher.watch("agent-1", conversation, () -> { });
+        conversation.setStatus(AgentConversationStatus.IDLE);
+
+        assertThat(watcher.shutdownEstimates(List.of(task))).containsKey("task-1");
+
+        conversation.setStatus(AgentConversationStatus.BUSY);
+
+        assertThat(watcher.shutdownEstimates(List.of(task))).isEmpty();
     }
 }

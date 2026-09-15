@@ -6,7 +6,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 
 import com.teggr.codeagent.schedule.ScheduledTaskService;
 
@@ -17,13 +16,6 @@ public class ScheduledTaskWebController {
 
     public ScheduledTaskWebController(ScheduledTaskService scheduledTaskService) {
         this.scheduledTaskService = scheduledTaskService;
-    }
-
-    @PostMapping("/scheduled-tasks")
-    public ResponseEntity<Void> create(@RequestParam(value = "repoUrl", required = false, defaultValue = "") String repoUrl,
-            @RequestParam String prompt, @RequestParam String cronExpression) {
-        scheduledTaskService.create(repoUrl, prompt, cronExpression);
-        return redirect("/");
     }
 
     @PostMapping("/scheduled-tasks/{taskId}/pause")

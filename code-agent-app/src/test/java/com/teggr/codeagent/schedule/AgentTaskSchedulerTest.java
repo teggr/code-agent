@@ -66,7 +66,7 @@ class AgentTaskSchedulerTest {
 
         assertThat(task.status()).isEqualTo(ScheduledTaskStatus.RUNNING);
         assertThat(task.currentAgentId()).isEqualTo("agent-1");
-        verify(idleCompletionWatcher).watch(any(), any(), any());
+        verify(idleCompletionWatcher).watch(any(), any(), any(), any());
     }
 
     @Test

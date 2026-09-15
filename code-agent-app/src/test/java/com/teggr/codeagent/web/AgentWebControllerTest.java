@@ -27,6 +27,7 @@ import com.teggr.codeagent.agent.runtime.AgentRuntimeInstance;
 import com.teggr.codeagent.agent.runtime.WorkspaceAccess;
 import com.teggr.codeagent.harness.AgentHarness;
 import com.teggr.codeagent.harness.HarnessSession;
+import com.teggr.codeagent.schedule.IdleCompletionWatcher;
 import com.teggr.codeagent.schedule.ScheduledTaskService;
 
 class AgentWebControllerTest {
@@ -38,7 +39,7 @@ class AgentWebControllerTest {
         ScheduledTaskService scheduledTaskService = mock(ScheduledTaskService.class);
         when(scheduledTaskService.list()).thenReturn(List.of());
         AgentWebController controller = new AgentWebController(manager, mock(GitHubRepositoryService.class),
-                scheduledTaskService);
+                scheduledTaskService, mock(IdleCompletionWatcher.class));
 
         ModelAndView view = controller.dashboard();
 
@@ -54,31 +55,35 @@ class AgentWebControllerTest {
                 List.of(new GitHubRepositoryService.Repository("teggr/j2html-toolkit",
                         "https://github.com/teggr/j2html-toolkit", "private", true,
                         Instant.parse("2026-09-10T10:00:00Z"))), false, false));
-        AgentWebController controller = new AgentWebController(manager, repositoryService, mock(ScheduledTaskService.class));
+        AgentWebController controller = new AgentWebController(manager, repositoryService, mock(ScheduledTaskService.class),
+                mock(IdleCompletionWatcher.class));
 
-        ModelAndView view = controller.repositoryResults("toolkit", 1);
+        ModelAndView view = controller.repositoryResults("toolkit", 1, "recurring-agent");
 
         assertThat(view.getViewName()).isEqualTo("fragments :: repositoryResults");
         assertThat(view.getModel()).containsEntry("query", "toolkit").containsEntry("hasMore", false)
-                .containsEntry("unavailable", false).containsKey("repositories");
+            .containsEntry("unavailable", false).containsEntry("pickerId", "recurring-agent")
+            .containsKey("repositories");
     }
 
     @Test
     void repositorySelectionRendersSelectedPickerState() {
         AgentWebController controller = controller(mock(AgentManager.class));
 
-        ModelAndView view = controller.repositorySelection(repositoryUrl(), "teggr/repository");
+        ModelAndView view = controller.repositorySelection(repositoryUrl(), "teggr/repository", "recurring-agent");
 
         assertThat(view.getViewName()).isEqualTo("fragments :: repositoryPicker");
         assertThat(view.getModel()).containsEntry("selectedRepositoryUrl", repositoryUrl())
-                .containsEntry("selectedRepositoryName", "teggr/repository");
+            .containsEntry("selectedRepositoryName", "teggr/repository")
+            .containsEntry("pickerId", "recurring-agent");
     }
 
     @Test
     void startingAgentRedirectsToDashboard() {
         AgentManager manager = mock(AgentManager.class);
 
-        ResponseEntity<Void> response = controller(manager).startAgent(repositoryUrl(), "Inspect the project");
+        ResponseEntity<Void> response = controller(manager).createAgentTask(repositoryUrl(), "Inspect the project", "",
+                "immediate");
 
         verify(manager).startAsync(repositoryUrl(), "Inspect the project");
         assertRedirect(response, "/");
@@ -88,9 +93,23 @@ class AgentWebControllerTest {
     void startingAgentWithBlankRepoUrlStartsLocalWorkspace() {
         AgentManager manager = mock(AgentManager.class);
 
-        ResponseEntity<Void> response = controller(manager).startAgent("", "Set up a new project");
+        ResponseEntity<Void> response = controller(manager).createAgentTask("", "Set up a new project", "", "immediate");
 
         verify(manager).startLocalAsync("Set up a new project");
+        assertRedirect(response, "/");
+    }
+
+    @Test
+    void schedulingAgentTaskDelegatesToScheduledTaskService() {
+        AgentManager manager = mock(AgentManager.class);
+        ScheduledTaskService scheduledTaskService = mock(ScheduledTaskService.class);
+        AgentWebController controller = new AgentWebController(manager, mock(GitHubRepositoryService.class),
+                scheduledTaskService, mock(IdleCompletionWatcher.class));
+
+        ResponseEntity<Void> response = controller.createAgentTask(repositoryUrl(), "Inspect the project",
+                "0 0 9 * * *", "schedule");
+
+        verify(scheduledTaskService).create(repositoryUrl(), "Inspect the project", "0 0 9 * * *");
         assertRedirect(response, "/");
     }
 
@@ -98,10 +117,11 @@ class AgentWebControllerTest {
     void emptyWorkspaceSelectionRendersPickerInEmptyState() {
         AgentWebController controller = controller(mock(AgentManager.class));
 
-        ModelAndView view = controller.emptyWorkspaceSelection();
+        ModelAndView view = controller.emptyWorkspaceSelection("recurring-agent");
 
         assertThat(view.getViewName()).isEqualTo("fragments :: repositoryPicker");
-        assertThat(view.getModel()).containsEntry("emptyWorkspaceSelected", true);
+        assertThat(view.getModel()).containsEntry("emptyWorkspaceSelected", true)
+            .containsEntry("pickerId", "recurring-agent");
     }
 
     @Test
@@ -240,7 +260,8 @@ class AgentWebControllerTest {
     }
 
     private static AgentWebController controller(AgentManager manager) {
-        return new AgentWebController(manager, mock(GitHubRepositoryService.class), mock(ScheduledTaskService.class));
+        return new AgentWebController(manager, mock(GitHubRepositoryService.class), mock(ScheduledTaskService.class),
+                mock(IdleCompletionWatcher.class));
     }
 
     private static AgentManager managerWithAgent() {

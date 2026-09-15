@@ -27,13 +27,26 @@ public class ScheduledTaskService {
     }
 
     public ScheduledAgentTask create(String repositoryUrl, String prompt, String cronExpression) {
-        validateCron(cronExpression);
+        String normalizedCron = normalizeCron(cronExpression);
+        validateCron(normalizedCron);
         ScheduledAgentTask task = new ScheduledAgentTask(UUID.randomUUID().toString(),
-                repositoryUrl == null || repositoryUrl.isBlank() ? null : repositoryUrl, prompt, cronExpression);
+                repositoryUrl == null || repositoryUrl.isBlank() ? null : repositoryUrl, prompt, normalizedCron);
         repository.save(task);
         scheduler.register(task);
         publishList();
         return task;
+    }
+
+    /** Spring's {@link CronTrigger} requires 6 fields (with seconds); accept the standard 5-field unix cron too. */
+    private String normalizeCron(String cronExpression) {
+        if (cronExpression == null) {
+            return null;
+        }
+        String trimmed = cronExpression.trim();
+        if (trimmed.split("\\s+").length == 5) {
+            return "0 " + trimmed;
+        }
+        return trimmed;
     }
 
     public void pause(String taskId) {

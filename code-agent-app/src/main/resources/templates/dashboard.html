@@ -18,21 +18,40 @@
     .messages { border: 2px solid #333; border-radius: 10px; padding: 12px; background: white; }
     .msg { padding: 8px 0; border-bottom: 1px solid #d0d0d0; }
     .msg:last-child { border-bottom: none; }
+    .agent-action + .agent-action { border-top: 2px solid #d9d9d9; margin-top: 24px; padding-top: 24px; }
   </style>
 </head>
 <body>
   <div class="shell" hx-ext="sse" sse-connect="/agents/events">
     <div class="panel">
-      <h2>Start a new agent</h2>
-      <form method="post" action="/agents" onsubmit="return confirmEmptyWorkspaceStart(this)">
-        <div th:replace="~{fragments :: repositoryPicker}"></div>
-        <div class="row">
-          <textarea name="prompt" rows="5" placeholder="Describe the task you want the agent to run"></textarea>
-        </div>
-        <div class="row">
-          <button class="button" type="submit">Start task</button>
-        </div>
-      </form>
+      <div class="agent-action">
+        <h2>Start a new agent</h2>
+        <form method="post" action="/agents" onsubmit="return confirmEmptyWorkspaceStart(this)">
+          <div th:replace="~{fragments :: repositoryPicker}"></div>
+          <div class="row">
+            <textarea name="prompt" rows="5" placeholder="Describe the task you want the agent to run"></textarea>
+          </div>
+          <div class="row">
+            <button class="button" type="submit">Start task</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="agent-action">
+        <h2>Schedule a recurring agent</h2>
+        <form method="post" action="/scheduled-tasks" onsubmit="return confirmEmptyWorkspaceStart(this)">
+          <div th:replace="~{fragments :: repositoryPicker}"></div>
+          <div class="row">
+            <textarea name="prompt" rows="5" placeholder="Describe the task the agent should run on each fire"></textarea>
+          </div>
+          <div class="row">
+            <input name="cronExpression" type="text" placeholder="Cron expression, e.g. 0 0 9 * * MON-FRI"/>
+          </div>
+          <div class="row">
+            <button class="button" type="submit">Schedule task</button>
+          </div>
+        </form>
+      </div>
     </div>
 
     <div class="panel">
@@ -40,22 +59,6 @@
       <div id="agent-list" sse-swap="agentList">
         <div th:replace="~{fragments :: agentList(${agents})}"></div>
       </div>
-    </div>
-
-    <div class="panel">
-      <h2>Schedule a recurring agent</h2>
-      <form method="post" action="/scheduled-tasks" onsubmit="return confirmEmptyWorkspaceStart(this)">
-        <div th:replace="~{fragments :: repositoryPicker}"></div>
-        <div class="row">
-          <textarea name="prompt" rows="5" placeholder="Describe the task the agent should run on each fire"></textarea>
-        </div>
-        <div class="row">
-          <input name="cronExpression" type="text" placeholder="Cron expression, e.g. 0 0 9 * * MON-FRI"/>
-        </div>
-        <div class="row">
-          <button class="button" type="submit">Schedule task</button>
-        </div>
-      </form>
     </div>
 
     <div class="panel">
